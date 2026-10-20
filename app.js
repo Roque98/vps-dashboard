@@ -113,10 +113,14 @@ function grafica(titulo, ts, series, o = {}) {
 /* =================== modelo a partir de la API =================== */
 function modelo(d) {
   const inst = d.instantanea || {};
+  const mon = inst.monitoreo || {};
+  const chq = mon.chequeos || {}, sp = mon.spark || {}, upc = mon.uptimeChequeos || {}, msv = mon.servicios || {}, act = mon.actividad || {};
   const srv = Object.fromEntries((d.servicios || []).map((s) => [s.nombre, s]));
   const estSrv = (n) => { const s = srv[n]; if (!s) return "gris"; return s.estado === "active" ? "ok" : s.estado === "activating" || s.estado === "reloading" ? "warn" : s.estado === "desconocido" ? "gris" : "mal"; };
+  const estChk = (c) => !c ? "gris" : c.ok ? (c.ms > 1500 ? "warn" : "ok") : c.fallosSeguidos >= 2 ? "mal" : "warn";
+  const pct = (x) => x == null ? "—" : `${x >= 99.995 ? "100" : x.toFixed(2)}%`;
   const certs = inst.certificados || [];
-  const certDe = (dom) => certs.find((c) => (c.dominios || []).includes(dom)) || certs.find((c) => (c.dominios || []).some((x) => x.startsWith("*.") && dom.endsWith(x.slice(1))));
+  const certDe = (dom) => certs.find((c) => (c.dominios || []).includes(dom.split("/")[0]));
   const sitios = (inst.nginx || {}).sitios || [];
   const memPct = d.memoriaTotalBytes ? 100 * (1 - d.memoriaDisponibleBytes / d.memoriaTotalBytes) : null;
   const raiz = (d.discos || []).find((x) => x.montaje === "/") || (d.discos || [])[0];
@@ -125,160 +129,149 @@ function modelo(d) {
   const bansAhora = Object.values(f2b).reduce((a, j) => a + (j.baneadosAhora || 0), 0);
   const bans24 = Object.values(f2b).reduce((a, j) => a + (j.baneos24h || 0), 0);
   const edad = d.edadInstantaneaSegundos;
-  const estColector = edad == null ? "mal" : edad < 150 ? "ok" : edad < 600 ? "warn" : "mal";
   const N = {};
-  const add = (id, o) => (N[id] = { id, ...o });
+  const add = (id, capa, o) => (N[id] = { id, capa, met: [], det: [], ...o });
+  const svcDet = (n) => { const s = srv[n] || {}, m = msv[n]; return [["Estado systemd", s.estado ? `${s.estado} · ${s.subEstado}` : "sin dato"], ["Activo desde", s.activoDesdeUtc ? `${fecha(s.activoDesdeUtc)} (hace ${hace(s.activoDesdeUtc)})` : "—"], ["Memoria", bytes(s.memoriaBytes)], ["Reinicios", s.reinicios ?? "—"],
+    ...(m ? [["Uptime 24h / 7d / 30d", `${pct(m.uptime?.["24h"])} · ${pct(m.uptime?.["7d"])} · ${pct(m.uptime?.["30d"])}`], ["Último incidente", m.ultimoIncidente ? `${m.ultimoIncidente.titulo} · ${fecha(m.ultimoIncidente.inicio * 1000)}${m.ultimoIncidente.fin ? "" : " (ACTIVO)"}` : "ninguno registrado"]] : [])]; };
+  const servicio = (id, capa, nombre, st, extra = {}) => {
+    const s = srv[nombre] || {}, m = msv[nombre], c = chq["local:" + nombre];
+    add(id, capa, { tit: nombre, st, tag: "SERVICIO", ico: "servidor", est: peor(estSrv(nombre), c ? estChk(c) : "gris"), uptime: m?.uptime?.["24h"],
+      met: [...(c ? [met("reloj", `${c.ms} ms`, c.ms > 1500 ? "warn" : "")] : []), met("mem", bytes(s.memoriaBytes)), met("con", `${s.reinicios ?? "—"} reinic.`, s.reinicios > 3 ? "warn" : "")],
+      sparks: [...(c ? [{ lbl: "LAT", v: (sp.lat || {})["local:" + nombre], fmt: (x) => `${x} ms` }] : []), ...(m ? [{ lbl: "MEM", v: m.spark, fmt: (x) => `${x} MB`, c: "#38bdf8" }] : [])],
+      det: [...svcDet(nombre), ...(c ? [["Chequeo local", `${c.url.replace(/^http:\/\/127\.0\.0\.1/, "")} → HTTP ${c.codigo} en ${c.ms} ms`]] : [])], ...extra });
+  };
 
-  const svcDetalle = (n) => { const s = srv[n] || {}; return [["Estado systemd", s.estado ? `${s.estado} · ${s.subEstado}` : "sin dato"], ["Puerto", s.puerto || "—"], ["Activo desde", s.activoDesdeUtc ? `${fecha(s.activoDesdeUtc)} (hace ${hace(s.activoDesdeUtc)})` : "—"], ["Memoria", bytes(s.memoriaBytes)], ["Reinicios", s.reinicios ?? "—"], ["Descripción", s.descripcion || "—"]]; };
-  const svcMet = (n) => { const s = srv[n] || {}; return [met("mem", bytes(s.memoriaBytes)), met("reloj", s.activoDesdeUtc ? hace(s.activoDesdeUtc) : "—"), met("con", `${s.reinicios ?? "—"} reinic.`, s.reinicios > 3 ? "warn" : "")]; };
+  // ---------- host (banda superior)
+  const estHost = peor(umbral(d.cpuPorcentaje, 80, 95), umbral(memPct, 85, 95), umbral(discoPct, 80, 92));
+  add("vps", "host", { tit: "VPS " + (d.host || ""), st: `157.x · ${d.nucleos} vCPU · uptime ${dur(d.uptimeSegundos)}`, tag: "SERVIDOR", ico: "servidor", est: estHost,
+    met: [met("cpu", `${(d.cpuPorcentaje ?? 0).toFixed(0)}%`, umbral(d.cpuPorcentaje, 80, 95)), met("mem", `${memPct?.toFixed(0) ?? "—"}%`, umbral(memPct, 85, 95)), met("disk", `${discoPct?.toFixed(0) ?? "—"}%`, umbral(discoPct, 80, 92)), met("con", `${bansAhora} bans`), met("reloj", `carga ${(d.cargaPromedio || [0])[0].toFixed(2)}`), met("con", `↓${bytes(act.rxBps)}/s ↑${bytes(act.txBps)}/s`)],
+    sparks: sp.cpu ? [{ lbl: "CPU", v: sp.cpu, fmt: (x) => `${x}%` }, { lbl: "RAM", v: sp.mem, fmt: (x) => `${x}%`, c: "#38bdf8" }, { lbl: "REQ", v: sp.req, fmt: (x) => `${x}/min`, c: "#e879f9" }] : [],
+    det: [["Host", d.host], ["Uptime", dur(d.uptimeSegundos)], ["CPU", `${(d.cpuPorcentaje ?? 0).toFixed(1)} % · carga ${(d.cargaPromedio || []).map((x) => x.toFixed(2)).join(" / ")}`], ["Memoria", `${bytes(d.memoriaTotalBytes - d.memoriaDisponibleBytes)} de ${bytes(d.memoriaTotalBytes)} (${memPct?.toFixed(0)} %)`], ["Swap", d.swapTotalBytes ? `${bytes(d.swapTotalBytes - d.swapLibreBytes)} de ${bytes(d.swapTotalBytes)}` : "sin swap"], ...(d.discos || []).map((x) => [`Disco ${x.montaje}`, `${bytes(x.totalBytes - x.libreBytes)} de ${bytes(x.totalBytes)}`]), ["Red", `↓ ${bytes(act.rxBps)}/s · ↑ ${bytes(act.txBps)}/s`]] });
 
-  // --- externos
+  // ---------- EXTERNOS
   const nodos = inst.nodos || [];
-  const latidos = nodos.filter((n) => !n.revocado).map((n) => n.ultimoLatidoUtc ? (Date.now() - new Date(n.ultimoLatidoUtc)) / 1000 : Infinity);
-  const enLinea = latidos.filter((x) => x < 600).length;
-  const estGas = !nodos.length ? "gris" : enLinea === latidos.length ? "ok" : enLinea > 0 ? "warn" : "mal";
-  add("usuarios", { tit: "Usuarios", st: "Clientes ZIA", tag: "EXTERNO", ico: "usuarios", est: "ok", inferido: true,
-    det: [["Qué es", "Personas que usan la consola, la API y la landing"], ["Estado", "Inferido: la API respondió a este panel a través de Cloudflare"]] });
-  add("gasolineras", { tit: "Gasolineras", st: `${nodos.length} nodo(s) · ${enLinea} en línea`, tag: "EXTERNO", ico: "bomba", est: estGas,
-    met: [met("con", `${enLinea}/${latidos.length} latido`), met("reloj", nodos[0] ? "últ. " + hace(nodos.map((n) => n.ultimoLatidoUtc).sort().pop()) : "—")],
+  const lat = nodos.filter((n) => !n.revocado).map((n) => n.ultimoLatidoUtc ? (Date.now() - new Date(n.ultimoLatidoUtc)) / 1000 : Infinity);
+  const enLinea = lat.filter((x) => x < 600).length;
+  add("usuarios", "externos", { tit: "Usuarios", st: "clientes ZIA · navegador", tag: "EXTERNO", ico: "usuarios", est: "ok", inferido: true,
+    met: [met("con", `${act.reqMin ?? "—"} req/min`), met("disk", `${act.e5Min ?? 0} 5xx`, act.e5Min ? "warn" : "")],
+    det: [["Estado", "Inferido: la API respondió a este panel a través de Cloudflare"], ["Peticiones nginx", `${act.reqMin ?? "—"} en el último minuto (${act.e5Min ?? 0} con 5xx)`]] });
+  add("gasolineras", "externos", { tit: "Gasolineras", st: `${nodos.length} nodo(s) de prueba · ${enLinea} en línea`, tag: "EXTERNO", ico: "bomba", est: !nodos.length ? "gris" : enLinea === lat.length ? "ok" : enLinea ? "warn" : "mal",
+    met: [met("con", `${enLinea}/${lat.length} latido`), met("reloj", nodos.length ? "últ. " + hace(nodos.map((n) => n.ultimoLatidoUtc).filter(Boolean).sort().pop()) : "—")],
     det: nodos.map((n) => [n.equipo || "nodo", `${n.permiso} · v${n.version || "?"} · ${n.revocado ? "revocado" : n.ultimoLatidoUtc ? "latido hace " + hace(n.ultimoLatidoUtc) : "sin latido"}`]) });
   const deps = inst.ultimoDeploy || {};
   const ultDep = Object.values(deps).filter(Boolean).sort().pop();
-  add("github", { tit: "GitHub Actions", st: "deploy.yml → SSH", tag: "EXTERNO", ico: "rama", est: ultDep ? "ok" : "gris",
-    met: [met("reloj", ultDep ? "hace " + hace(ultDep) : "sin deploy")],
-    det: Object.entries(deps).map(([k, v]) => [`Último deploy ${k}`, `${fecha(v)} (hace ${hace(v)})`]) });
-  add("telegram", { tit: "Telegram", st: "api.telegram.org", tag: "EXTERNO", ico: "avion", est: "gris",
-    det: [["Uso", "Bots de alertas de igas-console y avisos de zia-chatbot"], ["Estado", "Sin medición directa desde el VPS (enlace inferido)"]] });
+  add("github", "externos", { tit: "GitHub Actions", st: "deploy.yml → SSH", tag: "EXTERNO", ico: "rama", est: ultDep ? "ok" : "gris",
+    met: [met("reloj", ultDep ? "deploy hace " + hace(ultDep) : "sin deploy")], det: Object.entries(deps).map(([k, v]) => [`Último deploy ${k}`, `${fecha(v)} (hace ${hace(v)})`]) });
 
-  // --- Cloudflare y dominios
-  const dominios = [
-    ["d-landing", "ziacentro.mx", "landing", "Landing estática"],
-    ["d-console", "console.ziacentro.mx", "consola", "Consola Angular"],
-    ["d-api", "api.ziacentro.mx", "igas-console", "igas-console :5010"],
-    ["d-app", "app.ziacentro.com", "zia-chatbot", "zia-chatbot :5020"],
-    ["d-legacy", "console.igasmorelia.com", "igas-console", "legado → igas-console"],
-    ["d-legacy-api", "api.console.igasmorelia.com", "igas-console", "legado → API"],
-  ];
+  // ---------- EDGE
+  const dominios = [["d-landing", "ziacentro.mx", "landing estática"], ["d-console", "console.ziacentro.mx", "consola Angular"], ["d-api", "api.ziacentro.mx", "igas-console :5010"], ["d-chat", "ziacentro.mx/api/chat", "zia-chatbot :5020"]];
+  for (const [id, dom, dest] of dominios) {
+    const c = chq[dom], ce = certDe(dom), u = upc[dom];
+    const estCert = ce ? umbral(-ce.diasRestantes, -30, -7) : "gris";
+    add(id, "edge", { tit: dom, st: "→ " + dest, tag: "DOMINIO", ico: "web", sub: true, chk: dom, est: peorConocido(estChk(c), estCert), uptime: u?.["24h"],
+      met: [met("con", `HTTP ${c?.codigo || "—"}`, c && !c.ok ? "mal" : ""), met("reloj", c ? `${c.ms} ms` : "—", c?.ms > 1500 ? "warn" : ""), met("candado", ce ? `${Math.floor(ce.diasRestantes)} d` : "—", ce ? estCert : "")],
+      sparks: [{ lbl: "LAT", v: (sp.lat || {})[dom], fmt: (x) => `${x} ms` }],
+      det: [["Chequeo (vía Cloudflare)", c ? `${c.url} → HTTP ${c.codigo || "sin respuesta"} en ${c.ms} ms` : "sin dato"], ["Uptime 24h / 7d / 30d", u ? `${pct(u["24h"])} · ${pct(u["7d"])} · ${pct(u["30d"])}` : "—"], ["Certificado", ce ? `${ce.nombre} · vence ${fecha(ce.venceUtc)} (${Math.floor(ce.diasRestantes)} d)` : "—"], ["Destino", dest]] });
+  }
+  add("cloudflare", "edge", { tit: "Cloudflare", st: "proxy · DNS · TLS de borde", tag: "EDGE", ico: "nube", est: "ok", hijos: dominios.map((x) => x[0]),
+    met: [met("candado", `cert ${certDe("ziacentro.mx") ? Math.floor(certDe("ziacentro.mx").diasRestantes) + " d" : "—"}`), met("con", `${dominios.length} dominios`)],
+    det: [["Estado", "OK (inferido: esta respuesta llegó por Cloudflare)"], ["Origen", (mon.firewall || {}).nginxSoloCloudflare ? "nginx solo acepta IPs de Cloudflare (cloudflare-solo)" : "sin restricción detectada"]] });
+
+  // ---------- WEB
+  add("landing", "web", { tit: "Landing", st: "ziacentro.mx · /srv/zia/web", tag: "ESTÁTICO", ico: "web", sub: true, est: peorConocido(estSrv("nginx"), estChk(chq["ziacentro.mx"])), det: [["Contenido", "Sitio estático de ziacentro.mx"]] });
+  add("consola", "web", { tit: "Consola Angular", st: "console.ziacentro.mx", tag: "ESTÁTICO", ico: "web", sub: true, est: peorConocido(estSrv("nginx"), estChk(chq["console.ziacentro.mx"])), det: [["Contenido", "SPA de la consola (/srv/igas-console/current/web)"]] });
+  add("nginx", "web", { tit: "nginx", st: ":80 · :443 · solo Cloudflare", tag: "PROXY", ico: "web", est: peor(estSrv("nginx"), (inst.nginx || {}).configValida === false ? "warn" : "ok"), hijos: ["landing", "consola"], uptime: msv.nginx?.uptime?.["24h"],
+    met: [met("con", `${act.reqMin ?? "—"} req/min`), met("disk", `${act.e5Min ?? 0} 5xx`, act.e5Min ? "warn" : ""), met("mem", bytes((srv.nginx || {}).memoriaBytes))],
+    sparks: [{ lbl: "REQ", v: sp.req, fmt: (x) => `${x}/min` }],
+    det: [...svcDet("nginx"), ["nginx -t", (inst.nginx || {}).configValida ? "válida" : "con errores o sin dato"], ["Sitios", sitios.map((s) => s.archivo).join(", ") || "—"]] });
+
+  // ---------- API / BACKEND
+  servicio("igas-console", "api", "igas-console", "127.0.0.1:5010 · ABP + OpenIddict");
   const abpSitio = sitios.find((s) => s.archivo === "abp-template");
-  const abpDom = abpSitio ? abpSitio.dominios.find((x) => x.startsWith("api.")) || abpSitio.dominios[0] : null;
-  if (abpDom) dominios.push(["d-abp", abpDom, "abp-template", "abp-template"]);
-  const hijosCf = [];
-  for (const [id, dom, destino, etiqueta] of dominios) {
-    const c = certDe(dom);
-    const estCert = c ? umbral(-c.diasRestantes, -30, -7) : "gris";
-    const enNginx = sitios.some((s) => s.dominios.includes(dom));
-    const back = destino === "landing" || destino === "consola" ? estSrv("nginx") : estSrv(destino);
-    add(id, { tit: dom, st: etiqueta, tag: "DOMINIO", ico: "web", sub: true, est: enNginx || !sitios.length ? peor(estCert, back) : "mal", legado: id.startsWith("d-legacy"),
-      met: [met("candado", c ? `${Math.floor(c.diasRestantes)} d` : "sin cert", c ? estCert : "")],
-      det: [["Certificado", c ? `${c.nombre} · vence ${fecha(c.venceUtc)}` : "no encontrado"], ["Días restantes", c ? Math.floor(c.diasRestantes) : "—"], ["Sitio nginx", (sitios.find((s) => s.dominios.includes(dom)) || {}).archivo || "—"], ["Destino", etiqueta], ["Proxy Cloudflare", "sí (inferido)"]] });
-    hijosCf.push(id);
-  }
-  add("cloudflare", { tit: "Cloudflare", st: "proxy · DNS · TLS de borde", tag: "EXTERNO", ico: "nube", est: "ok", hijos: hijosCf, ancho: true,
-    met: [met("candado", `${certs.length} certs origen`), met("con", `${dominios.length} dominios`)],
-    det: [["Estado", "OK (inferido: esta respuesta llegó por Cloudflare)"], ["Origen", "Solo IPs de Cloudflare hacia nginx"], ["Certificados de origen", certs.map((c) => `${c.nombre}: ${Math.floor(c.diasRestantes)} d`).join(" · ") || "—"]] });
+  servicio("abp-template", "api", "abp-template", `127.0.0.1:5000 · ${abpSitio ? abpSitio.dominios.find((x) => x.startsWith("api.")) || "" : ""}`);
 
-  // --- VPS
-  const svcIds = [];
-  add("nginx", { tit: "nginx", st: ":80 · :443", tag: "SERVICIO", ico: "web", sub: true, est: peor(estSrv("nginx"), (inst.nginx || {}).configValida === false ? "warn" : "ok"), alto: true,
-    met: [met("mem", bytes((srv.nginx || {}).memoriaBytes)), met("con", `${sitios.length} sitios`)],
-    det: [...svcDetalle("nginx"), ["nginx -t", (inst.nginx || {}).configValida ? "válida" : (inst.nginx ? "con errores" : "sin dato")], ["Sitios", sitios.map((s) => s.archivo).join(", ") || "—"]] });
-  for (const [id, n, port, desc] of [["igas-console", "igas-console", ":5010", "API ABP + OpenIddict"], ["zia-chatbot", "zia-chatbot", ":5020", "asistente de la landing"], ["abp-template", "abp-template", (abpSitio?.proxyA[0] || "").replace(/^https?:\/\/[^:]+/, "") || "local", "plantilla ABP"]]) {
-    add(id, { tit: n, st: `127.0.0.1${port} · ${desc}`, tag: "SERVICIO", ico: "servidor", sub: true, est: estSrv(n), met: svcMet(n), det: svcDetalle(n) });
-    svcIds.push(id);
-  }
-  add("landing", { tit: "Landing / consola web", st: "estático servido por nginx", tag: "SITIO", ico: "web", sub: true, est: estSrv("nginx"), det: [["Contenido", "ziacentro.mx y la SPA de console.ziacentro.mx"], ["Servidor", "nginx (archivos estáticos)"]] });
-  svcIds.push("landing");
-  add("fail2ban", { tit: "fail2ban", st: Object.keys(f2b).join(" · ") || "jails", tag: "SEGURIDAD", ico: "escudo", sub: true, est: inst.fail2ban ? estSrv("fail2ban") : peor(estSrv("fail2ban"), "gris"),
-    met: [met("con", `${bansAhora} ban · ${bans24}/24h`, bansAhora > 20 ? "warn" : "")],
-    det: [...svcDetalle("fail2ban"), ...Object.entries(f2b).map(([j, v]) => [`Jail ${j}`, `${v.baneadosAhora} ahora · ${v.baneos1h} en 1 h · ${v.baneos24h} en 24 h · ${v.baneadosTotal} total`])] });
-  add("ssh", { tit: "ssh", st: ":22 · " + (inst.ssh ? (inst.ssh.soloLlave ? "solo llave" : "¡acepta contraseña!") : "—"), tag: "SEGURIDAD", ico: "candado", sub: true,
-    est: peor(estSrv("ssh"), inst.ssh && !inst.ssh.soloLlave ? "warn" : "ok"), met: [met("con", `${(f2b.sshd || {}).baneos24h ?? "—"} bans/24h`)], det: svcDetalle("ssh") });
-  const estHost = peor(umbral(d.cpuPorcentaje, 80, 95), umbral(memPct, 85, 95), umbral(discoPct, 80, 92));
-  add("vps", { tit: "VPS " + (d.host || ""), st: `157.x · ${d.nucleos} vCPU · uptime ${dur(d.uptimeSegundos)}`, tag: "SERVIDOR", ico: "servidor",
-    est: peor(estHost, ...["nginx", "igas-console", "abp-template", "zia-chatbot", "fail2ban", "ssh"].map((x) => N[x].est === "mal" ? "warn" : N[x].est)),
-    met: [met("cpu", `${(d.cpuPorcentaje ?? 0).toFixed(0)}%`, umbral(d.cpuPorcentaje, 80, 95)), met("mem", `${memPct?.toFixed(0) ?? "—"}%`, umbral(memPct, 85, 95)), met("disk", `${discoPct?.toFixed(0) ?? "—"}%`, umbral(discoPct, 80, 92)), met("con", `${bansAhora} bans`)],
-    det: [["Host", d.host], ["Uptime", dur(d.uptimeSegundos)], ["CPU", `${(d.cpuPorcentaje ?? 0).toFixed(1)} % · carga ${(d.cargaPromedio || []).map((x) => x.toFixed(2)).join(" / ")}`], ["Memoria", `${bytes(d.memoriaTotalBytes - d.memoriaDisponibleBytes)} de ${bytes(d.memoriaTotalBytes)} (${memPct?.toFixed(0)} %)`], ["Swap", d.swapTotalBytes ? `${bytes(d.swapTotalBytes - d.swapLibreBytes)} de ${bytes(d.swapTotalBytes)}` : "sin swap"], ...(d.discos || []).map((x) => [`Disco ${x.montaje}`, `${bytes(x.totalBytes - x.libreBytes)} de ${bytes(x.totalBytes)}`])] });
+  // ---------- BOTS
+  servicio("zia-chatbot", "bots", "zia-chatbot", "127.0.0.1:5020 · chat de la landing");
+  const bot = mon.bot || {};
+  add("worker", "bots", { tit: "ChatLeadTelegramWorker", st: "dentro de igas-console", tag: "WORKER", ico: "reloj", sub: false, est: estSrv("igas-console"), inferido: true,
+    det: [["Qué hace", "Avisa por Telegram de los prospectos que deja el chat"], ["Proceso", "igas-console (estado inferido del servicio)"]] });
+  add("bot-monitor", "bots", { tit: "@VpsIngAngelMonitor_bot", st: "alertas VPS · leads", tag: "BOT", ico: "avion", est: bot.t ? (bot.ok ? "ok" : "mal") : "gris",
+    met: [met("reloj", bot.t ? `getMe hace ${dur(Date.now() / 1000 - bot.t)}` : "sin dato", bot.t && !bot.ok ? "mal" : "")],
+    det: [["Token", bot.t ? (bot.ok ? "válido (getMe OK)" : "getMe falló") : "sin dato"], ["Chat de alertas", bot.chatConfigurado ? "configurado (grupo VPS)" : "no configurado"], ["Usuario", bot.usuario ? "@" + bot.usuario : "—"]] });
+  add("bot-abp", "bots", { tit: "@angel_test_98_bot", st: "bot de abp-template", tag: "BOT", ico: "avion", est: estSrv("abp-template") === "ok" ? "ok" : "gris", inferido: true,
+    det: [["Estado", "Inferido de abp-template (su token no se lee desde el panel)"]] });
+  add("telegram", "bots", { tit: "Telegram API", st: "api.telegram.org", tag: "EXTERNO", ico: "externo", est: bot.t ? (bot.ok ? "ok" : "mal") : "gris", det: [["Estado", "Medido con getMe del bot de alertas cada 10 min"]] });
 
-  // --- datos y monitoreo
+  // ---------- DATOS
   const pg = inst.postgres || {};
   const dbIds = [];
   for (const [db, b] of Object.entries(pg).sort((a, b) => b[1] - a[1])) {
     if (db === "postgres") continue;
-    const id = "db-" + db;
-    add(id, { tit: db, st: bytes(b), tag: "BD", ico: "bd", sub: true, est: estSrv("postgresql"), det: [["Tamaño", bytes(b)], ["Servidor", "PostgreSQL " + (inst.postgresVersion || "")]] });
-    dbIds.push(id);
+    add("db-" + db, "datos", { tit: db, st: bytes(b), tag: "BD", ico: "bd", sub: true, est: estSrv("postgresql"), det: [["Tamaño", bytes(b)]] });
+    dbIds.push("db-" + db);
   }
-  add("postgres", { tit: "PostgreSQL", st: `127.0.0.1:5432 · v${(inst.postgresVersion || "?").split(" ")[0]}`, tag: "BASE DE DATOS", ico: "bd", est: estSrv("postgresql"), hijos: dbIds,
-    met: [met("disk", bytes(Object.values(pg).reduce((a, b) => a + b, 0) || d.baseDeDatosBytes)), met("mem", bytes((srv.postgresql || {}).memoriaBytes)), met("con", `${Object.keys(pg).length} bases`)],
-    det: [...svcDetalle("postgresql"), ...Object.entries(pg).map(([k, v]) => [`Base ${k}`, bytes(v)])] });
-  add("colector", { tit: "Colector", st: "igas-monitoreo-vps.timer · 60 s", tag: "MONITOREO", ico: "reloj", est: estColector,
-    met: [met("reloj", edad != null ? `hace ${Math.round(edad)} s` : "sin datos", estColector)],
-    det: [["Qué hace", "Lee fail2ban, certificados, nginx, Postgres y latidos como root (solo lectura) y deja un JSON para la API"], ["Última muestra", edad != null ? `hace ${Math.round(edad)} s` : "nunca"]] });
-  add("respaldo", { tit: "Respaldo remoto", st: "backup-remoto.sh (planeado)", tag: "PLANEADO", ico: "disk", est: "gris", plan: true,
-    det: [["Estado", "Planeado: copia externa de la base"], ["Medición", "Aún no reporta al panel"]] });
+  add("postgres", "datos", { tit: "PostgreSQL", st: `127.0.0.1:5432 · v${(inst.postgresVersion || "?").split(" ")[0]}`, tag: "BASE DE DATOS", ico: "bd", est: estSrv("postgresql"), hijos: dbIds, uptime: msv.postgresql?.uptime?.["24h"],
+    met: [met("disk", bytes(Object.values(pg).reduce((a, b) => a + b, 0) || d.baseDeDatosBytes)), met("mem", bytes((srv.postgresql || {}).memoriaBytes))],
+    sparks: msv.postgresql ? [{ lbl: "MEM", v: msv.postgresql.spark, fmt: (x) => `${x} MB`, c: "#38bdf8" }] : [], det: [...svcDet("postgresql"), ...Object.entries(pg).map(([k, v]) => [`Base ${k}`, bytes(v)])] });
+  const hp = mon.historialPuntos || {};
+  add("historial", "datos", { tit: "Historial", st: "monitoreo-historial.json · 30 d", tag: "SERIE", ico: "disk", est: edad == null ? "mal" : edad < 150 ? "ok" : edad < 600 ? "warn" : "mal",
+    met: [met("disk", bytes(mon.historialBytes)), met("con", `${hp.minuto ?? 0} + ${hp.agregado ?? 0} pts`), met("reloj", edad != null ? `hace ${Math.round(edad)} s` : "—")],
+    det: [["Contenido", "Muestras por minuto (24 h), agregados de 10 min (30 d) e incidentes"], ["Tamaño", bytes(mon.historialBytes)], ["Última muestra", edad != null ? `hace ${Math.round(edad)} s` : "nunca"]] });
 
-  // --- monitoreo activo: chequeos, uptime, sparklines
-  const mon = inst.monitoreo || {};
-  const chq = mon.chequeos || {}, sp = mon.spark || {}, upc = mon.uptimeChequeos || {}, msv = mon.servicios || {};
-  const estChk = (c) => !c ? "gris" : c.ok ? (c.ms > 1500 ? "warn" : "ok") : c.fallosSeguidos >= 2 ? "mal" : "warn";
-  const pct = (x) => x == null ? "—" : `${x >= 99.995 ? "100" : x.toFixed(2)}%`;
-  for (const [id, dom] of dominios) {
-    const c = chq[dom], n = N[id]; if (!n) continue;
-    n.chk = dom; n.est = peor(n.est, estChk(c));
-    if (c) { n.met.unshift(met("reloj", `${c.ms} ms`, c.ms > 1500 ? "warn" : "")); n.met.unshift(met("con", `HTTP ${c.codigo || "—"}`, c.ok ? "" : "mal")); }
-    n.sparks = [{ lbl: "LAT", v: (sp.lat || {})[dom], fmt: (x) => `${x} ms` }];
-    n.uptime = upc[dom]?.["24h"];
-    n.det.unshift(["Chequeo", c ? `${c.url} → HTTP ${c.codigo || "sin respuesta"} en ${c.ms} ms` : "sin dato"], ["Uptime 24h / 7d / 30d", upc[dom] ? `${pct(upc[dom]["24h"])} · ${pct(upc[dom]["7d"])} · ${pct(upc[dom]["30d"])}` : "—"]);
+  // ---------- CRON / TAREAS
+  const ahora = Date.now() / 1000;
+  const timers = mon.timers || [];
+  for (const t of timers) {
+    const fallo = t.resultado !== "success" || t.codigo !== 0;
+    const atrasado = t.proximo && t.proximo < ahora - 300;
+    const est = fallo ? "mal" : !t.ultimo ? "gris" : atrasado ? "warn" : "ok";
+    add("t-" + t.nombre, "cron", { tit: t.nombre, st: t.descripcion, tag: "TIMER", ico: "reloj", est, compacto: true,
+      met: [met("reloj", t.ultimo ? `últ. ${dur(ahora - t.ultimo)}` : "nunca"), met("con", t.nombre === "igas-monitoreo-vps" ? "cada 1 min" : t.proximo ? `próx. ${dur(t.proximo - ahora)}` : "—"), ...(fallo ? [met("disk", `código ${t.codigo}`, "mal")] : [])],
+      det: [["Qué hace", t.descripcion], ["Última ejecución", t.ultimo ? `${fecha(t.ultimo * 1000)} (hace ${dur(ahora - t.ultimo)})` : "nunca"], ["Próxima", t.proximo ? `${fecha(t.proximo * 1000)} (en ${dur(t.proximo - ahora)})` : t.nombre === "igas-monitoreo-vps" ? "cada minuto" : "—"], ["Resultado", `${t.resultado} · código ${t.codigo}`], ["Duración", t.duracion != null ? `${t.duracion} s` : "—"]] });
   }
-  for (const k of ["igas-console", "zia-chatbot", "abp-template", "nginx", "fail2ban", "ssh"]) {
-    const n = N[k], m = msv[k], c = chq["local:" + k]; if (!n) continue;
-    if (c) { n.est = peor(n.est, estChk(c)); n.met = [met("reloj", `${c.ms} ms`, c.ms > 1500 ? "warn" : ""), ...(n.met || [])]; }
-    if (m) {
-      n.uptime = m.uptime?.["24h"];
-      n.sparks = [{ lbl: "MEM", v: m.spark, fmt: (x) => `${x} MB`, c: "#38bdf8" }];
-      if (c) n.sparks.unshift({ lbl: "LAT", v: (sp.lat || {})["local:" + k], fmt: (x) => `${x} ms` });
-      n.det.push(["Uptime 24h / 7d / 30d", `${pct(m.uptime?.["24h"])} · ${pct(m.uptime?.["7d"])} · ${pct(m.uptime?.["30d"])}`], ["Último incidente", m.ultimoIncidente ? `${m.ultimoIncidente.titulo} · ${fecha(m.ultimoIncidente.inicio * 1000)}${m.ultimoIncidente.fin ? "" : " (ACTIVO)"}` : "ninguno registrado"]);
-      if (c) n.det.push(["Chequeo local", `${c.url.replace(/^http:\/\/127\.0\.0\.1/, "")} → HTTP ${c.codigo} en ${c.ms} ms`]);
-    }
-  }
-  if (msv.postgresql) { N.postgres.uptime = msv.postgresql.uptime?.["24h"]; N.postgres.sparks = [{ lbl: "MEM", v: msv.postgresql.spark, fmt: (x) => `${x} MB`, c: "#38bdf8" }]; }
-  const act = mon.actividad || {};
-  if (sp.cpu) {
-    N.vps.sparks = [{ lbl: "CPU", v: sp.cpu, fmt: (x) => `${x}%` }, { lbl: "RAM", v: sp.mem, fmt: (x) => `${x}%`, c: "#38bdf8" }];
-    N.nginx.sparks = [{ lbl: "REQ", v: sp.req, fmt: (x) => `${x}/min` }, ...(N.nginx.sparks || []).filter((x) => x.lbl === "MEM")];
-    N.nginx.met.push(met("con", `${act.reqMin ?? "—"} req/min`), met("disk", `${act.e5Min ?? 0} 5xx`, act.e5Min ? "warn" : ""));
-    N.usuarios.met = [met("con", `${act.reqMin ?? "—"} req/min`), met("reloj", `${bytes(act.txBps)}/s salida`)];
-    N.usuarios.det.push(["Peticiones nginx", `${act.reqMin} en el último minuto (${act.e5Min} con 5xx)`], ["Red", `↓ ${bytes(act.rxBps)}/s · ↑ ${bytes(act.txBps)}/s`]);
-    N.vps.det.push(["Red", `↓ ${bytes(act.rxBps)}/s · ↑ ${bytes(act.txBps)}/s`]);
-  }
-  for (const a of mon.alertasActivas || []) { const obj = a.clave.split(":")[1]; if (obj && N[obj]) N[obj].est = "mal"; }
-  N.vps.est = peor(estHost, ...["nginx", "igas-console", "abp-template", "zia-chatbot", "fail2ban", "ssh"].map((x) => N[x].est === "mal" ? "warn" : N[x].est));
-  N.vps.uptime = undefined;
 
-  // --- enlaces: [origen, destino, tipo]
+  // ---------- SEGURIDAD
+  const jails = Object.entries(f2b).map(([j, v]) => { const id = "jail-" + j;
+    add(id, "seguridad", { tit: j, st: `${v.baneadosAhora} ahora · ${v.baneos24h}/24h`, tag: "JAIL", ico: "escudo", sub: true, est: v.baneadosAhora > 20 ? "warn" : "ok",
+      det: [["Baneadas ahora", v.baneadosAhora], ["Baneos 1 h / 24 h", `${v.baneos1h} / ${v.baneos24h}`], ["Total baneos / fallos", `${v.baneadosTotal} / ${v.fallosTotal}`]] }); return id; });
+  add("fail2ban", "seguridad", { tit: "fail2ban", st: `${jails.length} jails`, tag: "IPS", ico: "escudo", est: estSrv("fail2ban"), hijos: jails, uptime: msv.fail2ban?.uptime?.["24h"],
+    met: [met("con", `${bansAhora} ban · ${bans24}/24h`, bansAhora > 20 ? "warn" : "")], det: svcDet("fail2ban") });
+  add("ssh", "seguridad", { tit: "ssh", st: ":22 · " + (inst.ssh ? (inst.ssh.soloLlave ? "solo llave" : "¡acepta contraseña!") : "—"), tag: "ACCESO", ico: "candado", est: peor(estSrv("ssh"), inst.ssh && !inst.ssh.soloLlave ? "mal" : "ok"),
+    met: [met("con", `${(f2b.sshd || {}).baneos24h ?? "—"} bans/24h`)], det: svcDet("ssh") });
+  const fw = mon.firewall || {};
+  add("firewall", "seguridad", { tit: "Firewall", st: `UFW ${fw.ufwActivo ? "activo" : "¿inactivo?"} · ${fw.nginxSoloCloudflare ? "web solo Cloudflare" : "web abierta"}`, tag: "RED", ico: "escudo",
+    est: !mon.firewall ? "gris" : fw.ufwActivo && fw.nginxSoloCloudflare ? "ok" : "warn", met: [met("con", (fw.ufwPermite || []).join(" · ") || "—")],
+    det: [["UFW", fw.ufwActivo ? "activo" : "inactivo o sin dato"], ["Permite", (fw.ufwPermite || []).join(", ") || "—"], ["Web", fw.nginxSoloCloudflare ? "nginx responde 403 a quien no venga de Cloudflare" : "sin restricción"], ["SSH", "solo llave; fail2ban vigila sshd"]] });
+
+  for (const a of mon.alertasActivas || []) { const [tipo, obj] = a.clave.split(":"); const id = tipo === "timer" ? "t-" + obj : obj; if (obj && N[id]) N[id].est = "mal"; }
+
+  // ---------- enlaces
   const E = [];
   const l = (a, b, tipo = "medido", via) => E.push({ a, b, tipo, via });
-  ["d-landing", "d-console", "d-api", "d-app"].forEach((x) => l("usuarios", x, "inferido"));
-  l("usuarios", "d-legacy", "inferido");
+  ["d-landing", "d-console", "d-api"].forEach((x) => l("usuarios", x, "inferido"));
   l("gasolineras", "d-api", "inferido");
-  for (const [id, , destino] of dominios) l(id, "nginx", "medido");
-  l("nginx", "igas-console"); l("nginx", "zia-chatbot"); l("nginx", "abp-template"); l("nginx", "landing");
-  l("igas-console", "db-igas_console");
+  l("d-landing", "landing"); l("d-console", "consola"); l("d-api", "nginx"); l("d-chat", "nginx");
+  l("nginx", "igas-console"); l("nginx", "zia-chatbot");
+  l("igas-console", "worker"); l("worker", "bot-monitor", "medido", { lado: "derecha" }); l("bot-monitor", "telegram", "medido", { lado: "derecha", carril: 1 });
+  l("abp-template", "bot-abp", "inferido"); l("bot-abp", "telegram", "inferido", { lado: "derecha" });
+  l("igas-console", "db-igas_console"); l("zia-chatbot", "db-igas_console", "inferido");
   for (const id of dbIds.filter((x) => x.startsWith("db-abp"))) l("abp-template", id);
-  l("colector", "igas-console", "medido", { dirA: -1, dirB: -1 });
-  l("telegram", "igas-console", "inferido", { bajo: 2 });
-  l("telegram", "zia-chatbot", "inferido", { bajo: 1 });
+  const tl = (t, b, tipo = "medido") => N["t-" + t] && l("t-" + t, b, tipo, { dirA: -1 });
+  tl("igas-monitoreo-vps", "historial"); tl("igas-monitoreo-vps", "bot-monitor"); tl("igas-console-backup", "db-igas_console"); tl("abp-template-backup", "db-abp_template");
+  tl("igas-console-restore-check", "postgres", "inferido"); tl("abp-template-restore-check", "postgres", "inferido");
+  l("historial", "igas-console", "medido", { dirA: -1 });
+  if (N["t-cf-actualizar-ips"]) l("t-cf-actualizar-ips", "firewall", "inferido");
+  if (N["t-certbot"]) l("t-certbot", "firewall", "inferido");
   l("github", "ssh", "inferido", { bajo: 0 });
-  l("ssh", "fail2ban", "medido");
-  l("postgres", "respaldo", "planeado", { lado: "abajo" });
+  l("fail2ban", "ssh", "medido", { lado: "derecha" });
+
   const reqMin = act.reqMin ?? 0;
   const latDe = (id) => { const n = N[id]; return n?.chk ? chq[n.chk]?.ms : chq["local:" + id]?.ms; };
   for (const e of E) {
-    if (e.a === "telegram") e.inverso = true;
-    const lat = latDe(e.b) ?? latDe(e.a);
-    // velocidad: más peticiones → más rápido; más latencia → más lento. Brillo/cantidad por actividad.
+    if (e.b === "telegram" || e.a.startsWith("t-")) e.inverso = false;
+    const latv = latDe(e.b) ?? latDe(e.a);
     const carga = Math.min(1, Math.log10(1 + reqMin) / 3);
-    e.dur = Math.max(0.9, Math.min(6, (lat ? 1.2 + lat / 400 : 2.2) * (1.4 - carga * 0.8) * (e.tipo === "inferido" ? 1.8 : 1)));
+    e.dur = Math.max(0.9, Math.min(6, (latv ? 1.2 + latv / 400 : 2.2) * (1.4 - carga * 0.8) * (e.tipo === "inferido" ? 1.8 : 1)));
     e.particulas = e.tipo === "inferido" ? 1 : 1 + Math.round(carga * 2);
     e.brillo = 0.55 + carga * 0.45;
     const ea = N[e.a]?.est ?? "gris", eb = N[e.b]?.est ?? "gris";
@@ -287,43 +280,42 @@ function modelo(d) {
   return { N, E: E.filter((e) => N[e.a] && N[e.b]), mon, resumen: { servicios: d.servicios || [], srvOk: (d.servicios || []).filter((s) => s.estado === "active").length, certs, estHost } };
 }
 
+const CAPAS = [["externos", "EXTERNOS"], ["edge", "EDGE"], ["web", "WEB"], ["api", "API / BACKEND"], ["bots", "BOTS"], ["datos", "DATOS"], ["cron", "CRON / TAREAS"], ["seguridad", "SEGURIDAD"]];
+const COLW = 188, COLP = 203, COLX0 = 16, TOP = 128;
+
 /* =================== render del diagrama =================== */
 function sparksHtml(n) {
   return (n.sparks || []).filter((x) => x.v && x.v.length).map((x) => { const u = x.v.filter((y) => y != null).at(-1);
     return `<div class="spark-fila"><span class="lbl">${x.lbl}</span>${spark(x.v, x.c)}<b>${u != null ? esc(x.fmt(u)) : "—"}</b></div>`; }).join("");
 }
 function tarjeta(n, N) {
-  const cls = ["nodo", n.sub ? "sub" : "", n.plan ? "plan" : "", n.est].join(" ");
+  const cls = ["nodo", n.sub ? "sub" : "", n.plan ? "plan" : "", n.compacto ? "compacto" : "", n.est].join(" ");
   const hijos = (n.hijos || []).map((h) => tarjeta(N[h], N)).join("");
   return `<div class="${cls}" data-id="${n.id}">
     <div class="n-cab"><span class="n-ico">${ICO[n.ico] || ""}</span><div class="n-cuerpo"><div class="n-tit">${esc(n.tit)}</div><div class="n-st">${esc(n.st)}</div></div>
     <div class="n-tag">${n.uptime != null ? `<span class="up ${n.uptime < 99 ? "mal" : n.uptime < 99.9 ? "warn" : ""}" title="uptime 24 h">${n.uptime >= 99.995 ? "100" : n.uptime.toFixed(1)}%</span>` : ""}${n.sub && n.uptime != null ? "" : esc(n.tag)} <i class="dot ${n.est}" title="${TXT[n.est]}"></i></div></div>
     ${n.met ? `<div class="metricas">${n.met.join("")}</div>` : ""}
     ${sparksHtml(n)}
-    ${hijos ? `<div class="hijos">${n.id === "cloudflare" ? hijosCloudflare(n, N) : hijos}</div>` : ""}
+    ${hijos ? `<div class="hijos">${hijos}</div>` : ""}
   </div>`;
-}
-function hijosCloudflare(n, N) {
-  const act = n.hijos.filter((h) => !N[h].legado), leg = n.hijos.filter((h) => N[h].legado);
-  return act.map((h) => tarjeta(N[h], N)).join("") + (leg.length ? `<div class="seccion">LEGADO · IGASMORELIA</div>` + leg.map((h) => tarjeta(N[h], N)).join("") : "");
 }
 function pintarDiagrama(M) {
   const { N } = M;
-  const col = (x, y, w, h, html, extra = "") => `<div class="col" style="left:${x}px;top:${y}px;width:${w}px;${h ? `height:${h}px;` : ""}${extra}">${html}</div>`;
-  const t = (id) => tarjeta(N[id], N);
   const vps = N.vps;
-  const vpsHtml = `<div class="nodo ${vps.est}" data-id="vps">
-    <div class="n-cab"><span class="n-ico">${ICO.servidor}</span><div class="n-cuerpo"><div class="n-tit">${esc(vps.tit)}</div><div class="n-st">${esc(vps.st)}</div></div><div class="n-tag">SERVIDOR <i class="dot ${vps.est}"></i></div></div>
-    <div class="metricas">${vps.met.join("")}</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 18px">${sparksHtml(vps)}</div>
-    <div class="vps-cuerpo"><div class="hijos" style="margin-top:0">${t("nginx").replace('class="nodo', 'style="flex:1;display:flex;flex-direction:column;justify-content:center" class="nodo')}<div class="seccion">SEGURIDAD</div>${t("ssh")}${t("fail2ban")}</div>
-      <div class="hijos" style="margin-top:0">${["igas-console", "zia-chatbot", "abp-template", "landing"].map(t).join("")}</div></div>
-  </div>`;
-  $("nodos-diagrama").innerHTML =
-    col(30, 50, 230, 700, ["usuarios", "gasolineras", "github", "telegram"].map(t).join(""), "justify-content:space-around") +
-    col(330, 50, 280, 0, t("cloudflare")) +
-    col(670, 50, 570, 0, vpsHtml) +
-    col(1300, 50, 310, 0, t("postgres") + '<div style="height:26px"></div>' + t("colector") + '<div style="height:44px"></div>' + t("respaldo"));
+  let html = `<div class="col" style="left:${COLX0}px;top:10px;width:${COLP * 8 - 15}px"><div class="nodo host ${vps.est}" data-id="vps">
+    <div class="host-fila"><div class="n-cab" style="min-width:260px"><span class="n-ico">${ICO.servidor}</span><div class="n-cuerpo"><div class="n-tit">${esc(vps.tit)}</div><div class="n-st">${esc(vps.st)}</div></div></div>
+    <div class="metricas" style="border:0;margin:0;padding:0">${vps.met.join("")}</div><div class="host-sparks">${sparksHtml(vps)}</div><div class="n-tag">SERVIDOR <i class="dot ${vps.est}"></i></div></div></div></div>`;
+  CAPAS.forEach(([capa, nombre], i) => {
+    const x = COLX0 + i * COLP;
+    const nodosCapa = Object.values(N).filter((n) => n.capa === capa);
+    const tops = nodosCapa.filter((n) => !Object.values(N).some((p) => (p.hijos || []).includes(n.id)));
+    const conocidos = nodosCapa.filter((n) => n.est !== "gris"), ok = conocidos.filter((n) => n.est === "ok").length;
+    const e = conocidos.length ? peor(...conocidos.map((n) => n.est)) : "gris";
+    html += `<div class="capa-fondo ${e}" style="left:${x - 6}px;width:${COLW + 12}px"></div>
+      <div class="capa-head ${e}" style="left:${x}px;width:${COLW}px"><div class="c-nom">${nombre}</div><div class="c-sal"><i class="dot ${e}"></i>${{ ok: "OK", warn: "DEGRADADO", mal: "FALLA", gris: "SIN DATO" }[e]} <span>${ok}/${conocidos.length}</span></div></div>
+      <div class="col" style="left:${x}px;top:${TOP}px;width:${COLW}px;gap:12px">${tops.map((n) => tarjeta(n, N)).join("")}</div>`;
+  });
+  $("nodos-diagrama").innerHTML = html;
   document.querySelectorAll("#nodos-diagrama .nodo").forEach((el) => el.addEventListener("click", (ev) => { ev.stopPropagation(); seleccionar(el.dataset.id); }));
   requestAnimationFrame(() => trazarEnlaces(M));
 }
@@ -356,7 +348,7 @@ function trazarEnlaces(M) {
   // orden de llegada para que no se crucen: por y del otro extremo
   for (const k in sal) sal[k].sort((p, q) => (caja(p.b)?.y ?? 0) - (caja(q.b)?.y ?? 0));
   for (const k in ent) ent[k].sort((p, q) => (caja(p.a)?.y ?? 0) - (caja(q.a)?.y ?? 0));
-  const fondo = Math.max(...[...document.querySelectorAll("#nodos-diagrama > .col > .nodo")].map((el) => { const b = caja(el.dataset.id); return b ? b.y + b.h : 0; }));
+  const fondo = Math.max(...[...document.querySelectorAll("#nodos-diagrama > .col > .nodo:not(.host)")].map((el) => { const b = caja(el.dataset.id); return b ? b.y + b.h : 0; }));
   let html = "", carril = {};
   ENLACES = [];
   for (const e of M.E) {
@@ -365,12 +357,15 @@ function trazarEnlaces(M) {
     let pts;
     if (e.via?.lado === "abajo") {
       const x = A.x + A.w / 2; pts = [[x, A.y + A.h], [x, B.y]];
+    } else if (e.via?.lado === "derecha") {
+      const xr = Math.max(A.x + A.w, B.x + B.w) + 7 + (e.via.carril || 0) * 5, ay = A.y + A.h / 2 + 6, by = B.y + B.h / 2 - 6;
+      pts = [[A.x + A.w, ay], [xr, ay], [xr, by], [B.x + B.w, by]];
     } else {
       const dirA = e.via?.dirA ?? 1;
       const sx = dirA > 0 ? A.x + A.w : A.x, sy = yAnc(sal[e.a], e, A);
       const tx = dirA > 0 ? B.x : B.x + B.w, ty = yAnc(ent[e.b], e, B);
       if (e.via?.bajo) {
-        const yb = fondo + 18 + e.via.bajo * 10, xb = B.x - (e.b === "ssh" ? 22 : 14 + e.via.bajo * 8);
+        const yb = fondo + 18 + e.via.bajo * 10, xb = B.x - 9;
         pts = [[sx, sy], [sx + 18 + e.via.bajo * 8, sy], [sx + 18 + e.via.bajo * 8, yb], [xb, yb], [xb, ty], [tx, ty]];
       } else {
         const clave = Math.round(sx / 40) + ":" + Math.round(tx / 40);
@@ -389,7 +384,8 @@ function trazarEnlaces(M) {
     ENLACES.push(e);
   }
   svg.innerHTML = html;
-  H = Math.max(560, fondo + 60); $("lienzo").style.height = H + "px";
+  H = Math.max(560, fondo + 50); $("lienzo").style.height = H + "px";
+  document.querySelectorAll(".capa-fondo").forEach((f) => (f.style.height = H - 70 + "px"));
   if (vista.ajustada) ajustar();
   if (seleccion) resaltar(seleccion);
 }
@@ -400,7 +396,7 @@ function relacionados(id) {
   const padreDe = (x) => Object.values(NODOS).find((n) => (n.hijos || []).includes(x))?.id;
   const conHijos = (x) => [x, ...(NODOS[x]?.hijos || [])];
   const propios = new Set(conHijos(id));
-  if (id === "vps") ["nginx", "igas-console", "zia-chatbot", "abp-template", "landing", "fail2ban", "ssh"].forEach((x) => propios.add(x));
+
   for (const e of ENLACES) if (propios.has(e.a) || propios.has(e.b)) { ids.add(e.a); ids.add(e.b); }
   propios.forEach((x) => ids.add(x));
   [...ids].forEach((x) => { const p = padreDe(x); if (p) ids.add(p); });
@@ -515,7 +511,7 @@ function zoom(f, cx, cy) {
 const fila = (n, extra = "") => tarjeta({ ...n, hijos: null }, NODOS).replace("</div>\n  </div>", `${extra}</div>\n  </div>`);
 function pintarListas(d, M) {
   const inst = d.instantanea || {};
-  $("v-servicios").innerHTML = `<h2>SERVIDOR</h2>${fila(NODOS.vps)}${fila(NODOS.postgres)}${fila(NODOS.colector)}<h2>SERVICIOS SYSTEMD</h2>` +
+  $("v-servicios").innerHTML = `<h2>SERVIDOR</h2>${fila(NODOS.vps)}${fila(NODOS.postgres)}${fila(NODOS.historial)}${fila(NODOS.firewall)}<h2>TAREAS PROGRAMADAS</h2>${Object.values(NODOS).filter((n) => n.capa === "cron").map((n) => fila(n)).join("")}<h2>SERVICIOS SYSTEMD</h2>` +
     (d.servicios || []).map((s) => fila(NODOS[s.nombre] || { id: s.nombre, tit: s.nombre, st: s.descripcion, tag: "SERVICIO", ico: "servidor", est: s.estado === "active" ? "ok" : "mal",
       met: [met("mem", bytes(s.memoriaBytes)), met("reloj", s.activoDesdeUtc ? hace(s.activoDesdeUtc) : "—"), met("con", `${s.reinicios ?? "—"} reinic.`)] })).join("") +
     `<h2>DISCOS</h2>` + (d.discos || []).map((x) => { const u = 100 * (1 - x.libreBytes / x.totalBytes); const e = umbral(u, 80, 92);
@@ -574,7 +570,7 @@ function pintarPills(M) {
   const enl = M.E.filter((e) => e.tipo !== "planeado"), enlOk = enl.filter((e) => e.est === "ok").length;
   const svcs = M.resumen.servicios, srvOk = M.resumen.srvOk;
   const certs = M.resumen.certs, certOk = certs.filter((c) => c.diasRestantes >= 30).length;
-  const nucleo = ["vps", "nginx", "igas-console", "zia-chatbot", "abp-template", "postgres", "colector", "cloudflare"];
+  const nucleo = ["vps", "nginx", "igas-console", "zia-chatbot", "abp-template", "postgres", "historial", "cloudflare"];
   const crit = Object.values(M.N).filter((n) => !n.plan && (!n.sub || nucleo.includes(n.id))).map((n) => (nucleo.includes(n.id) || n.est !== "mal" ? n.est : "warn"));
   const global = crit.includes("mal") ? "mal" : crit.includes("warn") || srvOk < svcs.length ? "warn" : "ok";
   const p = (v, t, e) => `<div class="pill ${e}"><b>${v}</b><small>${t}</small></div>`;
