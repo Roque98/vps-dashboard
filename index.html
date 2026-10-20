@@ -1,36 +1,82 @@
 <!doctype html>
 <html lang="es">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Monitoreo VPS · ZIA</title>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>ZIA MONITOREO</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header>
-  <div class="marca">⬢ <b>ZIA</b> Monitoreo del VPS</div>
-  <div id="estado-sesion"></div>
-</header>
-<main id="app">
-  <section id="pantalla-login" class="centro oculto">
-    <h1>Panel del servidor</h1>
-    <p>Inicia sesión con tu cuenta de ZIA-Console para ver el estado del VPS.</p>
-    <button id="btn-login" class="primario">Iniciar sesión</button>
-  </section>
-  <section id="pantalla-error" class="centro oculto"><h2 id="error-titulo"></h2><p id="error-texto"></p><button id="btn-reintentar">Reintentar</button></section>
-  <section id="panel" class="oculto">
-    <div class="barra"><span id="actualizado"></span><span id="cuenta"></span><button id="btn-refrescar">Actualizar</button></div>
-    <div class="tarjetas" id="tarjetas"></div>
-    <div class="rejilla">
-      <div class="caja"><h3>Servicios</h3><table id="t-servicios"></table></div>
-      <div class="caja"><h3>Discos</h3><div id="discos"></div><h3>Bases de datos</h3><table id="t-pg"></table></div>
-      <div class="caja"><h3>fail2ban</h3><table id="t-f2b"></table></div>
-      <div class="caja"><h3>Certificados TLS</h3><table id="t-certs"></table></div>
-      <div class="caja"><h3>Sitios nginx</h3><table id="t-nginx"></table></div>
-      <div class="caja"><h3>Despliegues y nodos</h3><table id="t-deploy"></table><table id="t-nodos"></table></div>
+<header class="top">
+  <div class="fila1">
+    <div class="titulo">ZIA <b>MONITOREO</b></div>
+    <div class="der">
+      <span class="tenue oc-movil">ACTUALIZADO:</span> <span id="actualizado">—</span>
+      <span class="live" id="live"><i></i>LIVE</span>
+      <span id="sesion"></span>
     </div>
-    <div class="caja ancha"><h3>Arquitectura</h3><p id="arq-desc" class="tenue"></p><pre class="mermaid" id="diagrama"></pre></div>
+  </div>
+  <div class="fila2">
+    <nav class="tabs" id="tabs">
+      <button data-tab="arquitectura" class="activo">ARQUITECTURA</button>
+      <button data-tab="servicios">SERVICIOS</button>
+      <button data-tab="seguridad">SEGURIDAD</button>
+      <button data-tab="nodos">NODOS</button>
+    </nav>
+    <div class="pills" id="pills"></div>
+  </div>
+</header>
+
+<main>
+  <section id="v-login" class="login oculto">
+    <div class="login-card">
+      <div class="titulo grande">ZIA <b>MONITOREO</b></div>
+      <div class="login-sub">PANEL DEL SERVIDOR · ACCESO RESTRINGIDO</div>
+      <div class="login-diag"><span>USUARIO</span><i></i><span>OIDC</span><i></i><span>API</span><i></i><span>VPS</span></div>
+      <p>Inicia sesión con tu cuenta de ZIA-Console. Se requiere el permiso <code>Monitoreo.VerVps</code>.</p>
+      <button id="btn-login" class="btn-lima">INICIAR SESIÓN →</button>
+      <div class="login-pie">api.ziacentro.mx · código de autorización + PKCE</div>
+    </div>
   </section>
+
+  <section id="v-error" class="login oculto">
+    <div class="login-card error-card">
+      <div class="err-tag" id="err-tag">ERROR</div>
+      <div class="titulo grande" id="err-titulo"></div>
+      <p id="err-texto"></p>
+      <div class="fila-btn"><button id="btn-reintentar" class="btn-lima">REINTENTAR</button><button id="btn-salir" class="btn-linea">CAMBIAR DE USUARIO</button></div>
+    </div>
+  </section>
+
+  <section id="v-arquitectura" class="vista oculto">
+    <div class="viewport" id="viewport">
+      <div class="lienzo" id="lienzo">
+        <svg class="enlaces" id="enlaces"></svg>
+        <div class="col-head" style="left:30px">USUARIOS Y EXTERNOS</div>
+        <div class="col-head" style="left:330px">EDGE / CLOUDFLARE</div>
+        <div class="col-head" style="left:670px">VPS 157.x (servicios)</div>
+        <div class="col-head" style="left:1300px">DATOS Y MONITOREO</div>
+        <div id="nodos-diagrama"></div>
+      </div>
+      <div class="zoom"><button id="z-mas" title="Acercar">+</button><button id="z-menos" title="Alejar">−</button><button id="z-fit" title="Ajustar">⤢</button></div>
+      <div class="nota" id="nota"></div>
+    </div>
+  </section>
+  <section id="v-servicios" class="vista lista oculto"></section>
+  <section id="v-seguridad" class="vista lista oculto"></section>
+  <section id="v-nodos" class="vista lista oculto"></section>
+
+  <aside class="panel" id="panel"><button class="cerrar" id="panel-cerrar">✕</button><div id="panel-cuerpo"></div></aside>
 </main>
+
+<footer class="leyenda" id="leyenda">
+  <span><i class="lg-card"></i>SERVIDOR</span><span><i class="lg-card sub"></i>SERVICIO / DOMINIO</span><span><i class="lg-card plan"></i>PLANEADO</span>
+  <span><i class="dot ok"></i>OK</span><span><i class="dot warn"></i>DEGRADADO</span><span><i class="dot mal"></i>FALLA</span><span><i class="dot gris"></i>SIN DATO</span>
+  <span><i class="lg-line"></i>MEDIDO</span><span><i class="lg-line dash"></i>INFERIDO</span><span><i class="lg-line dot3"></i>PLANEADO</span>
+  <span class="ico-l" data-i="cpu">CPU</span><span class="ico-l" data-i="mem">MEMORIA</span><span class="ico-l" data-i="disk">DISCO</span><span class="ico-l" data-i="con">CONEXIONES / BANEOS</span>
+  <span class="hint">Clic en un nodo para aislar sus conexiones · arrastra / rueda para mover y hacer zoom</span>
+</footer>
 <script src="config.js"></script>
 <script type="module" src="app.js"></script>
 </body>
