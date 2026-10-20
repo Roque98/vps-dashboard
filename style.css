@@ -1,0 +1,21 @@
+:root{--bg:#0d1117;--caja:#161b22;--borde:#30363d;--txt:#e6edf3;--tenue:#8b949e;--ok:#3fb950;--warn:#d29922;--mal:#f85149;--acento:#58a6ff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{display:flex;justify-content:space-between;align-items:center;padding:12px 20px;border-bottom:1px solid var(--borde);background:#010409}
+.marca{font-size:16px}.marca b{color:var(--acento)}
+main{padding:20px;max-width:1400px;margin:auto}.oculto{display:none!important}
+.centro{text-align:center;margin-top:12vh}
+button{background:#21262d;color:var(--txt);border:1px solid var(--borde);border-radius:6px;padding:6px 14px;cursor:pointer}
+button:hover{border-color:var(--acento)}button.primario{background:#238636;border-color:#2ea043;padding:10px 24px;font-size:15px}
+.barra{display:flex;gap:16px;align-items:center;justify-content:flex-end;color:var(--tenue);margin-bottom:14px}
+.tarjetas{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:14px}
+.tarjeta{background:var(--caja);border:1px solid var(--borde);border-radius:10px;padding:14px}
+.tarjeta .t{color:var(--tenue);font-size:12px;text-transform:uppercase;letter-spacing:.05em}.tarjeta .v{font-size:24px;font-weight:600;margin-top:4px}
+.tarjeta .s{color:var(--tenue);font-size:12px}
+.rejilla{display:grid;grid-template-columns:repeat(auto-fit,minmax(400px,1fr));gap:12px}
+.caja{background:var(--caja);border:1px solid var(--borde);border-radius:10px;padding:14px 16px;overflow:auto}.caja.ancha{margin-top:12px}
+h3{margin:0 0 10px;font-size:14px;color:var(--acento)}table{width:100%;border-collapse:collapse;margin-bottom:8px}
+td,th{padding:5px 6px;border-bottom:1px solid #21262d;text-align:left;vertical-align:top}th{color:var(--tenue);font-weight:500;font-size:12px}
+.p{display:inline-block;padding:1px 8px;border-radius:10px;font-size:12px;font-weight:600}
+.ok{background:#3fb95022;color:var(--ok)}.warn{background:#d2992222;color:var(--warn)}.mal{background:#f8514922;color:var(--mal)}
+.barra-uso{height:8px;background:#21262d;border-radius:4px;overflow:hidden;margin:4px 0 10px}.barra-uso>i{display:block;height:100%}
+.tenue{color:var(--tenue)}.mermaid{background:transparent;text-align:center}

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Monitoreo VPS · ZIA</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div class="marca">⬢ <b>ZIA</b> Monitoreo del VPS</div>
+  <div id="estado-sesion"></div>
+</header>
+<main id="app">
+  <section id="pantalla-login" class="centro oculto">
+    <h1>Panel del servidor</h1>
+    <p>Inicia sesión con tu cuenta de ZIA-Console para ver el estado del VPS.</p>
+    <button id="btn-login" class="primario">Iniciar sesión</button>
+  </section>
+  <section id="pantalla-error" class="centro oculto"><h2 id="error-titulo"></h2><p id="error-texto"></p><button id="btn-reintentar">Reintentar</button></section>
+  <section id="panel" class="oculto">
+    <div class="barra"><span id="actualizado"></span><span id="cuenta"></span><button id="btn-refrescar">Actualizar</button></div>
+    <div class="tarjetas" id="tarjetas"></div>
+    <div class="rejilla">
+      <div class="caja"><h3>Servicios</h3><table id="t-servicios"></table></div>
+      <div class="caja"><h3>Discos</h3><div id="discos"></div><h3>Bases de datos</h3><table id="t-pg"></table></div>
+      <div class="caja"><h3>fail2ban</h3><table id="t-f2b"></table></div>
+      <div class="caja"><h3>Certificados TLS</h3><table id="t-certs"></table></div>
+      <div class="caja"><h3>Sitios nginx</h3><table id="t-nginx"></table></div>
+      <div class="caja"><h3>Despliegues y nodos</h3><table id="t-deploy"></table><table id="t-nodos"></table></div>
+    </div>
+    <div class="caja ancha"><h3>Arquitectura</h3><p id="arq-desc" class="tenue"></p><pre class="mermaid" id="diagrama"></pre></div>
+  </section>
+</main>
+<script src="config.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>
