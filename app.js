@@ -194,13 +194,15 @@ function modelo(d) {
   // ---------- EDGE
   const dominios = Z ? [["d-landing", "ziacentro.mx", "landing estática"], ["d-console", "console.ziacentro.mx", "consola Angular"], ["d-api", "api.ziacentro.mx", "igas-console :5010"], ["d-chat", "ziacentro.mx/api/chat", "zia-chatbot :5020"]]
     : [["d-abp-web", "inangelroque.duckdns.org", "sitio abp-template"], ["d-abp-api", "api.inangelroque.duckdns.org", "abp-template :5000"]];
+  const RUTAS = { "d-landing": ["landing"], "d-console": ["consola"], "d-api": ["igas-console", "db-igas_console"], "d-chat": ["zia-chatbot", "db-igas_console"],
+    "d-abp-web": ["abp-sitio"], "d-abp-api": ["abp-template", ...Object.keys(inst.postgres || {}).filter((k) => /abp/.test(k)).map((k) => "db-" + k)] };
   for (const [id, dom, dest] of dominios) {
     const c = chq[dom], ce = certDe(dom), u = upc[dom];
     const estCert = ce ? umbral(-ce.diasRestantes, -30, -7) : "gris";
-    add(id, "edge", { tit: dom, st: "→ " + dest, tag: "DOMINIO", ico: "web", sub: true, chk: dom, est: peorConocido(estChk(c), estCert), uptime: u?.["24h"],
+    add(id, "edge", { tit: dom, st: "→ " + dest, ruta: ["cloudflare", "nginx", ...RUTAS[id]], tag: "DOMINIO", ico: "web", sub: true, chk: dom, est: peorConocido(estChk(c), estCert), uptime: u?.["24h"],
       met: [met("con", `HTTP ${c?.codigo || "—"}`, c && !c.ok ? "mal" : ""), met("reloj", c ? `${c.ms} ms` : "—", c?.ms > 1500 ? "warn" : ""), met("candado", ce ? `${Math.floor(ce.diasRestantes)} d` : "—", ce ? estCert : "")],
       sparks: [{ lbl: "LAT", v: (sp.lat || {})[dom], fmt: (x) => `${x} ms` }],
-      det: [["Chequeo (vía Cloudflare)", c ? `${c.url} → HTTP ${c.codigo || "sin respuesta"} en ${c.ms} ms` : "sin dato"], ["Uptime 24h / 7d / 30d", u ? `${pct(u["24h"])} · ${pct(u["7d"])} · ${pct(u["30d"])}` : "—"], ["Certificado", ce ? `${ce.nombre} · vence ${fecha(ce.venceUtc)} (${Math.floor(ce.diasRestantes)} d)` : "—"], ["Destino", dest]] });
+      det: [["Chequeo (vía Cloudflare)", c ? `${c.url} → HTTP ${c.codigo || "sin respuesta"} en ${c.ms} ms` : "sin dato"], ["Uptime 24h / 7d / 30d", u ? `${pct(u["24h"])} · ${pct(u["7d"])} · ${pct(u["30d"])}` : "—"], ["Certificado", ce ? `${ce.nombre} · vence ${fecha(ce.venceUtc)} (${Math.floor(ce.diasRestantes)} d)` : "—"], ["Destino", dest], ["Ruta", [dom, Z ? "Cloudflare" : "DuckDNS", "nginx", ...RUTAS[id]].join(" → ")]] });
   }
   const dPri = dominios[0][1];
   add("cloudflare", "edge", { tit: Z ? "Cloudflare" : "DuckDNS", st: Z ? "proxy · DNS · TLS de borde" : "DNS dinámico · TLS Let's Encrypt", tag: "EDGE", ico: "nube", est: Z ? "ok" : peorConocido(...dominios.map((x) => estChk(chq[x[1]]))), hijos: dominios.map((x) => x[0]),
@@ -247,7 +249,7 @@ function modelo(d) {
   const hp = mon.historialPuntos || {};
   if (Z) add("historial", "datos", { tit: "Historial", st: "monitoreo-historial.json · 30 d", tag: "SERIE", ico: "disk", est: edad == null ? "mal" : edad < 150 ? "ok" : edad < 600 ? "warn" : "mal",
     met: [met("disk", bytes(mon.historialBytes)), met("con", `${hp.minuto ?? 0} + ${hp.agregado ?? 0} pts`), met("reloj", edad != null ? `hace ${Math.round(edad)} s` : "—")],
-    det: [["Contenido", "Muestras por minuto (24 h), agregados de 10 min (30 d) e incidentes"], ["Tamaño", bytes(mon.historialBytes)], ["Última muestra", edad != null ? `hace ${Math.round(edad)} s` : "nunca"]] });
+    det: [["Contenido", "Muestras por minuto (24 h), agregados de 10 min (30 d) e incidentes"], ["Tamaño", bytes(mon.historialBytes)], ["Última muestra", edad != null ? `hace ${Math.round(edad)} s` : "nunca"], ["Lo sirve", "igas-console · GET /historial"], ["Alertas", "las envía el colector por @VpsIngAngelMonitor_bot"]] });
 
   // ---------- CRON / TAREAS
   const ahora = Date.now() / 1000;
@@ -279,19 +281,18 @@ function modelo(d) {
   // ---------- enlaces
   const E = [];
   const l = (a, b, tipo = "medido", via) => E.push({ a, b, tipo, via });
-  ["d-landing", "d-console", "d-api", "d-abp-web", "d-abp-api"].forEach((x) => l("usuarios", x, "inferido"));
-  l("d-abp-web", "abp-sitio"); l("d-abp-api", "nginx"); l("nginx", "abp-template");
-  l("gasolineras", "d-api", "inferido");
-  l("d-landing", "landing"); l("d-console", "consola"); l("d-api", "nginx"); l("d-chat", "nginx");
+  l("usuarios", "cloudflare", "inferido"); if (Z) l("gasolineras", "cloudflare", "inferido");
+  for (const [id] of dominios) l(id, "cloudflare", "medido", { bus: true });
+  l("cloudflare", "nginx", "medido", { tronco: true });
+  l("nginx", "abp-template");
   l("nginx", "igas-console"); l("nginx", "zia-chatbot");
   l("igas-console", "worker"); l("worker", "bot-monitor", "medido", { lado: "derecha" }); l("bot-monitor", "telegram", "medido", { lado: "derecha", carril: 1 });
   l("abp-template", "bot-abp", "inferido"); l("bot-abp", "telegram", "inferido", { lado: "derecha" });
   l("igas-console", "db-igas_console"); l("zia-chatbot", "db-igas_console", "inferido");
   for (const id of dbIds.filter((x) => x.startsWith("db-abp"))) l("abp-template", id);
   const tl = (t, b, tipo = "medido") => N["t-" + t] && l("t-" + t, b, tipo, { dirA: -1 });
-  tl("igas-monitoreo-vps", "historial"); tl("igas-monitoreo-vps", "bot-monitor"); tl("igas-console-backup", "db-igas_console"); 
+  tl("igas-monitoreo-vps", "historial"); tl("igas-console-backup", "db-igas_console"); 
   tl("igas-console-restore-check", "postgres", "inferido"); tl("abp-template-restore-check", "postgres", "inferido");
-  l("historial", "igas-console", "medido", { dirA: -1 });
   for (const id of dbIds.filter((x) => x.startsWith("db-abp"))) tl("abp-template-backup", id);
   if (N["t-cf-actualizar-ips"]) l("t-cf-actualizar-ips", "firewall", "inferido");
   if (N["t-certbot"]) l("t-certbot", "firewall", "inferido");
@@ -349,7 +350,9 @@ function pintarDiagrama(M) {
       <div class="col capa-col" style="left:${x}px;top:${TOP}px;width:${COLW}px;gap:12px">${tops.map((n) => tarjeta(n, N)).join("")}</div>`;
   });
   $("nodos-diagrama").innerHTML = html;
-  document.querySelectorAll("#nodos-diagrama .nodo").forEach((el) => el.addEventListener("click", (ev) => { ev.stopPropagation(); seleccionar(el.dataset.id); }));
+  document.querySelectorAll("#nodos-diagrama .nodo").forEach((el) => { el.addEventListener("click", (ev) => { ev.stopPropagation(); seleccionar(el.dataset.id); });
+    el.addEventListener("mouseenter", (ev) => { ev.stopPropagation(); resaltar(el.dataset.id); });
+    el.addEventListener("mouseleave", () => { const p = el.parentElement.closest("[data-id]"); if (p) resaltar(p.dataset.id); else if (seleccion) resaltar(seleccion); else { $("lienzo").classList.remove("dim"); document.querySelectorAll(".rel,.sel").forEach((e) => e.classList.remove("rel", "sel")); } }); });
   ULTIMO_M = M;
   requestAnimationFrame(() => { distribuir(); trazarEnlaces(M); });
 }
@@ -412,27 +415,40 @@ function trazarEnlaces(M) {
   };
   // 1) esqueleto: los tramos verticales van en un canal (gutter) g; la x se asigna después por carriles
   const rutas = [], verts = {};
+  // haces: varias salidas de una tarjeta hacia el mismo canal comparten tronco y luego se abren (igual en llegadas)
+  const gut = (e) => { const ia = colDe(e.a), ib = colDe(e.b); if (e.via || ia === ib || ia < 0 || ib < 0) return null; const der = ib > ia; return { ga: der ? ia : ia - 1, gb: der ? ib - 1 : ib }; };
+  const cuenta = {}, estH = {};
+  const suma = (k, e) => { cuenta[k] = (cuenta[k] || 0) + 1; (estH[k] ||= new Set()).add(e.est + e.tipo); };
+  for (const e of M.E) { const g = gut(e); if (!g) continue; suma("s" + e.a + g.ga, e); suma("t" + e.b + g.gb, e); }
+  for (const k in cuenta) if (estH[k].size > 1) cuenta[k] = 1; // solo se agrupan enlaces del mismo estado y tipo
+  const refs = {}; const ref = (k, g) => (refs[k] ||= { g });
+  const cfB = caja("cloudflare"), busX = cfB ? cfB.x + cfB.w + 9 : 0;
+  const nxB = caja("nginx"), yTr = cfB && nxB ? Math.max(cfB.y + 40, Math.min(cfB.y + cfB.h - 30, nxB.y + nxB.h / 2)) : 0;
   for (const e of M.E) {
     const A = caja(e.a), B = caja(e.b);
     if (!A || !B) continue;
     const ia = colDe(e.a), ib = colDe(e.b);
     let pts;
-    if (e.via?.bajo) {
+    if (e.via?.bus) { const ay = A.y + Math.min(A.h / 2, 22); pts = [[A.x + A.w, ay], [busX, ay], [busX, yTr]]; e.sinPunta = true; }
+    else if (e.via?.tronco) { const ty = B.y + B.h / 2; pts = [[busX, yTr], [{ g: ia }, yTr], [{ g: ia }, ty], [B.x, ty]]; }
+    else if (e.via?.bajo) {
       const sx = A.x + A.w, sy = yAnc(sal[e.a], e, A), tx = B.x, ty = yAnc(ent[e.b], e, B);
-      const yb = fondo + 18 + e.via.bajo * 10;
-      pts = [[sx, sy], [{ g: ia }, sy], [{ g: ia }, yb], [{ g: ib - 1 }, yb], [{ g: ib - 1 }, ty], [tx, ty]];
+      const yb = fondo + 18 + e.via.bajo * 10, xa = A.x + A.w / 2, xr = B.x + B.w + 12, yt = B.y + B.h / 2;
+      pts = [[xa, A.y + A.h], [xa, yb], [xr, yb], [xr, yt], [B.x + B.w, yt]];
     } else if (ia === ib || ia < 0 || ib < 0) {
       const ay = A.y + A.h / 2 + 6, by = B.y + B.h / 2 - 6;
       pts = [[A.x + A.w, ay], [{ g: ia }, ay], [{ g: ia }, by], [B.x + B.w, by]];
     } else {
       const der = ib > ia;
       const sx = der ? A.x + A.w : A.x, tx = der ? B.x : B.x + B.w;
-      const sy = yAnc(sal[e.a], e, A), ty = yAnc(ent[e.b], e, B);
       const ga = der ? ia : ia - 1, gb = der ? ib - 1 : ib;
-      if (ga === gb) pts = [[sx, sy], [{ g: ga }, sy], [{ g: ga }, ty], [tx, ty]];
+      const hs = cuenta["s" + e.a + ga] > 1, ht = cuenta["t" + e.b + gb] > 1;
+      const sy = hs ? A.y + A.h / 2 : yAnc(sal[e.a], e, A), ty = ht ? B.y + B.h / 2 : yAnc(ent[e.b], e, B);
+      const Ga = hs ? ref("s" + e.a + ga, ga) : { g: ga }, Gb = ht ? ref("t" + e.b + gb, gb) : ga === gb ? Ga : { g: gb };
+      if (ga === gb) { const G = hs ? Ga : Gb; pts = [[sx, sy], [G, sy], [G, ty], [tx, ty]]; }
       else { const cols = []; for (let c = Math.min(ia, ib) + 1; c < Math.max(ia, ib); c++) cols.push(c);
-        const yc = canalY(cols, (sy + ty) / 2);
-        pts = [[sx, sy], [{ g: ga }, sy], [{ g: ga }, yc], [{ g: gb }, yc], [{ g: gb }, ty], [tx, ty]]; }
+        const yc = canalY(cols, ty);
+        pts = [[sx, sy], [Ga, sy], [Ga, yc], [Gb, yc], [Gb, ty], [tx, ty]]; }
     }
     for (let k = 1; k < pts.length - 1; k++) if (typeof pts[k][0] === "object" && typeof pts[k + 1][0] === "object" && pts[k + 1][0].g === pts[k][0].g) pts[k + 1][0] = pts[k][0];
     for (let k = 1; k < pts.length - 1; k++) if (typeof pts[k][0] === "object" && pts[k + 1] && pts[k + 1][0] === pts[k][0]) {
@@ -443,7 +459,8 @@ function trazarEnlaces(M) {
   }
   // 2) carriles: cada tramo vertical de un canal recibe su propia x (sin solaparse si coinciden en y)
   for (const g in verts) {
-    const vs = verts[g].sort((p, q) => p.y1 - q.y1 || p.y2 - q.y2);
+    const porRef = new Map(); for (const v of verts[g]) { const o = porRef.get(v.ref); if (o) { o.y1 = Math.min(o.y1, v.y1); o.y2 = Math.max(o.y2, v.y2); } else porRef.set(v.ref, { ...v }); }
+    const vs = [...porRef.values()].sort((p, q) => p.y1 - q.y1 || p.y2 - q.y2);
     const carriles = []; // fin en y de cada carril
     for (const v of vs) { let c = carriles.findIndex((fin) => fin < v.y1 - 6); if (c < 0) { c = carriles.length; carriles.push(0); } carriles[c] = v.y2; v.c = c; }
     const n = carriles.length, paso = Math.min(10, (GAP - 18) / Math.max(1, n - 1));
@@ -455,7 +472,8 @@ function trazarEnlaces(M) {
     const pts = crudo.map(([x, y]) => [typeof x === "object" ? x.x : x, y]);
     const d = ruta(pts), activo = e.tipo !== "planeado" && e.est !== "gris";
     html += `<g class="g-enl" data-a="${e.a}" data-b="${e.b}">
-      <path class="enl ${e.est} ${e.tipo} ${activo && e.tipo === "medido" ? "base" : ""}" d="${d}" ${e.inverso ? "marker-start" : "marker-end"}="url(#fl-${e.est})"/>
+      <path class="enl ${e.est} ${e.tipo} ${activo && e.tipo === "medido" ? "base" : ""} ${e.via?.tronco ? "tronco" : ""} ${e.via?.bus ? "stub" : ""}" d="${d}" ${e.sinPunta ? "" : `${e.inverso ? "marker-start" : "marker-end"}="url(#fl-${e.est})"`}/>
+      ${e.via?.tronco ? `<text class="tronco-lbl" text-anchor="middle" x="${(pts[0][0] + pts.at(-1)[0]) / 2 + 4}" y="${pts.at(-1)[1] - 16}">${M.mon.actividad?.reqMin ?? "—"}<tspan class="u" x="${(pts[0][0] + pts.at(-1)[0]) / 2 + 4}" dy="9">req/min</tspan></text>` : ""}
       ${activo ? `<path class="flujo ${e.est}" d="${d}" style="animation-duration:${(e.dur * LENTO).toFixed(2)}s;opacity:${e.brillo};${e.inverso ? "animation-direction:reverse" : ""}"/>` : ""}
       ${activo ? Array.from({ length: e.particulas }, (_, k) => `<circle class="particula" r="${e.tipo === "medido" ? 2.6 : 2}" fill="${e.est === "ok" ? "#d9f99d" : e.est === "warn" ? "#fcd34d" : "#fca5a5"}" color="${e.est === "ok" ? "#a3e635" : e.est === "warn" ? "#f59e0b" : "#ef4444"}" opacity="${e.brillo}"><animateMotion dur="${(e.dur * 2.2 * LENTO).toFixed(2)}s" begin="-${((k / e.particulas) * e.dur * 2.2 * LENTO).toFixed(2)}s" repeatCount="indefinite" ${e.inverso ? 'keyPoints="1;0" keyTimes="0;1" calcMode="linear"' : ""} path="${d}"/></circle>`).join("") : ""}
       <circle class="extremo ${e.est}" cx="${pts[0][0]}" cy="${pts[0][1]}" r="2.6"/></g>`;
@@ -474,6 +492,8 @@ function relacionados(id) {
   const padreDe = (x) => Object.values(NODOS).find((n) => (n.hijos || []).includes(x))?.id;
   const conHijos = (x) => [x, ...(NODOS[x]?.hijos || [])];
   const propios = new Set(conHijos(id));
+  if (NODOS[id]?.ruta) { const r = new Set([id, ...NODOS[id].ruta]); r.forEach((x) => ids.add(x)); [...ids].forEach((x) => { const p = padreDe(x); if (p) ids.add(p); });
+    return { ids, propios: r, soloRuta: true }; }
 
   for (const e of ENLACES) if (propios.has(e.a) || propios.has(e.b)) { ids.add(e.a); ids.add(e.b); }
   propios.forEach((x) => ids.add(x));
@@ -484,7 +504,8 @@ function resaltar(id) {
   const { ids, propios } = relacionados(id);
   $("lienzo").classList.add("dim");
   document.querySelectorAll("#nodos-diagrama .nodo").forEach((el) => { el.classList.toggle("rel", ids.has(el.dataset.id)); el.classList.toggle("sel", el.dataset.id === id); });
-  document.querySelectorAll(".g-enl").forEach((g) => g.classList.toggle("rel", propios.has(g.dataset.a) || propios.has(g.dataset.b)));
+  const r = relacionados(id);
+  document.querySelectorAll(".g-enl").forEach((g) => g.classList.toggle("rel", r.soloRuta ? propios.has(g.dataset.a) && propios.has(g.dataset.b) : propios.has(g.dataset.a) || propios.has(g.dataset.b)));
 }
 function seleccionar(id) {
   seleccion = id; resaltar(id);
