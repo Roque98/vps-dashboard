@@ -160,3 +160,6 @@ body.sin-datos .der>*:not(#sesion){visibility:hidden}
 .proy{display:inline-flex;border:1px solid #2a332d;border-radius:6px;overflow:hidden;margin-left:14px;vertical-align:middle;font-size:10px;letter-spacing:.08em}
 .proy a{padding:4px 9px;color:#8a968e;text-decoration:none}.proy a.activo{background:var(--lima);color:#0a0d0b;font-weight:700}.proy a:hover:not(.activo){color:var(--lima)}
 .fila1>.izq{display:flex;align-items:center}
+.punta{stroke:none}.punta.ok{fill:var(--lima)}.punta.warn{fill:var(--warn)}.punta.mal{fill:var(--mal)}.punta.gris{fill:#59625c}
+.enl.base{opacity:.7}
+.proy a{white-space:nowrap}@media(max-width:820px){.proy{margin-left:8px;font-size:8.5px}.proy a{padding:3px 5px}}

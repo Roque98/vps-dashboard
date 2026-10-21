@@ -314,7 +314,7 @@ function modelo(d) {
 }
 
 const CAPAS = [["externos", "EXTERNOS"], ["edge", "EDGE"], ["web", "WEB"], ["api", "API / BACKEND"], ["bots", "BOTS"], ["datos", "DATOS"], ["cron", "CRON / TAREAS"], ["seguridad", "SEGURIDAD"]];
-const COLW = 188, COLP = 203, COLX0 = 16, TOP = 128;
+const COLW = 184, GAP = 64, COLP = COLW + GAP, COLX0 = 16, TOP = 128;
 
 /* =================== render del diagrama =================== */
 function sparksHtml(n) {
@@ -335,7 +335,7 @@ function tarjeta(n, N) {
 function pintarDiagrama(M) {
   const { N } = M;
   const vps = N.vps;
-  let html = `<div class="col" style="left:${COLX0}px;top:10px;width:${COLP * 8 - 15}px"><div class="nodo host ${vps.est}" data-id="vps">
+  let html = `<div class="col" style="left:${COLX0}px;top:10px;width:${COLP * 8 - GAP}px"><div class="nodo host ${vps.est}" data-id="vps">
     <div class="host-fila"><div class="n-cab" style="min-width:260px"><span class="n-ico">${ICO.servidor}</span><div class="n-cuerpo"><div class="n-tit">${esc(vps.tit)}</div><div class="n-st">${esc(vps.st)}</div></div></div>
     <div class="metricas" style="border:0;margin:0;padding:0">${vps.met.join("")}</div><div class="host-sparks">${sparksHtml(vps)}</div><div class="n-tag">SERVIDOR <i class="dot ${vps.est}"></i></div></div></div></div>`;
   CAPAS.forEach(([capa, nombre], i) => {
@@ -390,43 +390,75 @@ function trazarEnlaces(M) {
   const svg = $("enlaces");
   const sal = {}, ent = {};
   for (const e of M.E) { (sal[e.a] ||= []).push(e); (ent[e.b] ||= []).push(e); }
-  const yAnc = (lista, e, bx) => { const i = lista.indexOf(e), n = lista.length, paso = Math.min(9, (bx.h - 14) / Math.max(1, n)); return bx.y + bx.h / 2 + (i - (n - 1) / 2) * paso; };
-  // orden de llegada para que no se crucen: por y del otro extremo
+  // anclajes repartidos a lo largo del borde de la tarjeta
+  const yAnc = (lista, e, bx) => { const i = lista.indexOf(e), n = lista.length, paso = Math.min(16, (bx.h - 16) / Math.max(1, n)); return bx.y + bx.h / 2 + (i - (n - 1) / 2) * paso; };
   for (const k in sal) sal[k].sort((p, q) => (caja(p.b)?.y ?? 0) - (caja(q.b)?.y ?? 0));
   for (const k in ent) ent[k].sort((p, q) => (caja(p.a)?.y ?? 0) - (caja(q.a)?.y ?? 0));
   const fondo = Math.max(...[...document.querySelectorAll("#nodos-diagrama > .col > .nodo:not(.host)")].map((el) => { const b = caja(el.dataset.id); return b ? b.y + b.h : 0; }));
-  let html = "", carril = {};
-  ENLACES = [];
+  const colDe = (id) => CAPAS.findIndex((c) => c[0] === M.N[id]?.capa);
+  const gx = (g) => COLX0 + g * COLP + COLW + GAP / 2;
+  const colEls = [...document.querySelectorAll(".capa-col")];
+  const libres = (i) => { const bs = [...colEls[i].children].map((el) => caja(el.dataset.id)).filter(Boolean).sort((p, q) => p.y - q.y);
+    const out = []; let y = TOP - 6; for (const bx of bs) { out.push([y, bx.y]); y = bx.y + bx.h; } out.push([y, fondo + 400]); return out; };
+  const usoCanal = {};
+  const canalY = (cols, yObj) => { // y libre de tarjetas en todas las columnas intermedias
+    let ivs = libres(cols[0]);
+    for (const c of cols.slice(1)) { const o = libres(c), r = []; for (const [a1, b1] of ivs) for (const [a2, b2] of o) { const lo = Math.max(a1, a2), hi = Math.min(b1, b2); if (hi - lo > 10) r.push([lo, hi]); } ivs = r; }
+    if (!ivs.length) return fondo + 20;
+    const [lo, hi] = ivs.sort((p, q) => Math.abs((p[0] + p[1]) / 2 - yObj) - Math.abs((q[0] + q[1]) / 2 - yObj))[0];
+    const k = cols.join(",") + "@" + Math.round(lo), n = (usoCanal[k] = (usoCanal[k] ?? -1) + 1);
+    const c = (lo + hi) / 2, paso = Math.min(8, (hi - lo - 8) / 6);
+    return c + (n % 2 ? 1 : -1) * Math.ceil(n / 2) * paso;
+  };
+  // 1) esqueleto: los tramos verticales van en un canal (gutter) g; la x se asigna después por carriles
+  const rutas = [], verts = {};
   for (const e of M.E) {
     const A = caja(e.a), B = caja(e.b);
     if (!A || !B) continue;
+    const ia = colDe(e.a), ib = colDe(e.b);
     let pts;
-    if (e.via?.lado === "abajo") {
-      const x = A.x + A.w / 2; pts = [[x, A.y + A.h], [x, B.y]];
-    } else if (e.via?.lado === "derecha") {
-      const xr = Math.max(A.x + A.w, B.x + B.w) + 7 + (e.via.carril || 0) * 5, ay = A.y + A.h / 2 + 6, by = B.y + B.h / 2 - 6;
-      pts = [[A.x + A.w, ay], [xr, ay], [xr, by], [B.x + B.w, by]];
+    if (e.via?.bajo) {
+      const sx = A.x + A.w, sy = yAnc(sal[e.a], e, A), tx = B.x, ty = yAnc(ent[e.b], e, B);
+      const yb = fondo + 18 + e.via.bajo * 10;
+      pts = [[sx, sy], [{ g: ia }, sy], [{ g: ia }, yb], [{ g: ib - 1 }, yb], [{ g: ib - 1 }, ty], [tx, ty]];
+    } else if (ia === ib || ia < 0 || ib < 0) {
+      const ay = A.y + A.h / 2 + 6, by = B.y + B.h / 2 - 6;
+      pts = [[A.x + A.w, ay], [{ g: ia }, ay], [{ g: ia }, by], [B.x + B.w, by]];
     } else {
-      const dirA = e.via?.dirA ?? 1;
-      const sx = dirA > 0 ? A.x + A.w : A.x, sy = yAnc(sal[e.a], e, A);
-      const tx = dirA > 0 ? B.x : B.x + B.w, ty = yAnc(ent[e.b], e, B);
-      if (e.via?.bajo) {
-        const yb = fondo + 18 + e.via.bajo * 10, xb = B.x - 9;
-        pts = [[sx, sy], [sx + 18 + e.via.bajo * 8, sy], [sx + 18 + e.via.bajo * 8, yb], [xb, yb], [xb, ty], [tx, ty]];
-      } else {
-        const clave = Math.round(sx / 40) + ":" + Math.round(tx / 40);
-        const n = (carril[clave] = (carril[clave] ?? -1) + 1);
-        const base = sx + (tx - sx) * (e.b === "nginx" ? 0.55 : 0.5);
-        const mx = Math.abs(sy - ty) < 1 ? base : base + ((n % 2 ? 1 : -1) * Math.ceil(n / 2) * 6);
-        pts = Math.abs(sy - ty) < 1 ? [[sx, sy], [tx, ty]] : [[sx, sy], [mx, sy], [mx, ty], [tx, ty]];
-      }
+      const der = ib > ia;
+      const sx = der ? A.x + A.w : A.x, tx = der ? B.x : B.x + B.w;
+      const sy = yAnc(sal[e.a], e, A), ty = yAnc(ent[e.b], e, B);
+      const ga = der ? ia : ia - 1, gb = der ? ib - 1 : ib;
+      if (ga === gb) pts = [[sx, sy], [{ g: ga }, sy], [{ g: ga }, ty], [tx, ty]];
+      else { const cols = []; for (let c = Math.min(ia, ib) + 1; c < Math.max(ia, ib); c++) cols.push(c);
+        const yc = canalY(cols, (sy + ty) / 2);
+        pts = [[sx, sy], [{ g: ga }, sy], [{ g: ga }, yc], [{ g: gb }, yc], [{ g: gb }, ty], [tx, ty]]; }
     }
+    for (let k = 1; k < pts.length - 1; k++) if (typeof pts[k][0] === "object" && typeof pts[k + 1][0] === "object" && pts[k + 1][0].g === pts[k][0].g) pts[k + 1][0] = pts[k][0];
+    for (let k = 1; k < pts.length - 1; k++) if (typeof pts[k][0] === "object" && pts[k + 1] && pts[k + 1][0] === pts[k][0]) {
+      const g = pts[k][0].g, y1 = pts[k][1], y2 = pts[k + 1][1];
+      (verts[g] ||= []).push({ ref: pts[k][0], y1: Math.min(y1, y2), y2: Math.max(y1, y2), salida: pts[k - 1][0] });
+    }
+    rutas.push([e, pts]);
+  }
+  // 2) carriles: cada tramo vertical de un canal recibe su propia x (sin solaparse si coinciden en y)
+  for (const g in verts) {
+    const vs = verts[g].sort((p, q) => p.y1 - q.y1 || p.y2 - q.y2);
+    const carriles = []; // fin en y de cada carril
+    for (const v of vs) { let c = carriles.findIndex((fin) => fin < v.y1 - 6); if (c < 0) { c = carriles.length; carriles.push(0); } carriles[c] = v.y2; v.c = c; }
+    const n = carriles.length, paso = Math.min(10, (GAP - 18) / Math.max(1, n - 1));
+    for (const v of vs) v.ref.x = gx(+g) + (v.c - (n - 1) / 2) * paso;
+  }
+  let html = `<defs>${["ok", "warn", "mal", "gris"].map((k) => `<marker id="fl-${k}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 z" class="punta ${k}"/></marker>`).join("")}</defs>`;
+  ENLACES = [];
+  for (const [e, crudo] of rutas) {
+    const pts = crudo.map(([x, y]) => [typeof x === "object" ? x.x : x, y]);
     const d = ruta(pts), activo = e.tipo !== "planeado" && e.est !== "gris";
     html += `<g class="g-enl" data-a="${e.a}" data-b="${e.b}">
-      <path class="enl ${e.est} ${e.tipo} ${activo && e.tipo === "medido" ? "base" : ""}" d="${d}"/>
+      <path class="enl ${e.est} ${e.tipo} ${activo && e.tipo === "medido" ? "base" : ""}" d="${d}" ${e.inverso ? "marker-start" : "marker-end"}="url(#fl-${e.est})"/>
       ${activo ? `<path class="flujo ${e.est}" d="${d}" style="animation-duration:${(e.dur * LENTO).toFixed(2)}s;opacity:${e.brillo};${e.inverso ? "animation-direction:reverse" : ""}"/>` : ""}
       ${activo ? Array.from({ length: e.particulas }, (_, k) => `<circle class="particula" r="${e.tipo === "medido" ? 2.6 : 2}" fill="${e.est === "ok" ? "#d9f99d" : e.est === "warn" ? "#fcd34d" : "#fca5a5"}" color="${e.est === "ok" ? "#a3e635" : e.est === "warn" ? "#f59e0b" : "#ef4444"}" opacity="${e.brillo}"><animateMotion dur="${(e.dur * 2.2 * LENTO).toFixed(2)}s" begin="-${((k / e.particulas) * e.dur * 2.2 * LENTO).toFixed(2)}s" repeatCount="indefinite" ${e.inverso ? 'keyPoints="1;0" keyTimes="0;1" calcMode="linear"' : ""} path="${d}"/></circle>`).join("") : ""}
-      <circle class="extremo ${e.est}" cx="${pts[0][0]}" cy="${pts[0][1]}" r="2.6"/><circle class="extremo ${e.est}" cx="${pts.at(-1)[0]}" cy="${pts.at(-1)[1]}" r="2.6"/></g>`;
+      <circle class="extremo ${e.est}" cx="${pts[0][0]}" cy="${pts[0][1]}" r="2.6"/></g>`;
     ENLACES.push(e);
   }
   svg.innerHTML = html;
@@ -516,7 +548,7 @@ $("panel-cerrar").onclick = deseleccionar;
 
 /* =================== pan / zoom =================== */
 const vista = { s: 1, x: 0, y: 0, ajustada: true };
-const W = 1640; let H = 860;
+const W = COLX0 * 2 + COLP * 8 - GAP; let H = 860;
 function aplicar() { $("lienzo").style.transform = `translate(${vista.x}px,${vista.y}px) scale(${vista.s})`; }
 function ajustar() {
   const v = $("viewport"), vw = v.clientWidth, vh = v.clientHeight;
