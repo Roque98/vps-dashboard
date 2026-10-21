@@ -192,10 +192,10 @@ function modelo(d) {
     met: [met("reloj", ultDep ? "deploy hace " + hace(ultDep) : "sin deploy")], det: Object.entries(deps).map(([k, v]) => [`Último deploy ${k}`, `${fecha(v)} (hace ${hace(v)})`]) });
 
   // ---------- EDGE
-  const dominios = Z ? [["d-landing", "ziacentro.mx", "landing estática"], ["d-console", "console.ziacentro.mx", "zia.console"], ["d-api", "api.ziacentro.mx", "igas-console :5010"], ["d-chat", "ziacentro.mx/api/chat", "zia-chatbot :5020"]]
+  const dominios = Z ? [["d-landing", "ziacentro.mx", "landing estática"], ["d-console", "console.ziacentro.mx", "zia.console"], ["d-api", "api.ziacentro.mx", "zia-console :5010"], ["d-chat", "ziacentro.mx/api/chat", "zia-chatbot :5020"]]
     : [["d-abp-web", "inangelroque.duckdns.org", "sitio abp-template"], ["d-abp-api", "api.inangelroque.duckdns.org", "abp-template :5000"]];
   const NOMBRES = { landing: "Landing", consola: "zia.console", "p-api": "proxy api", "p-chat": "proxy /api/chat", "p-abp-api": "proxy api", "abp-sitio": "sitio abp-template" };
-  const RUTAS = { "d-landing": ["landing"], "d-console": ["consola", "p-api", "igas-console"], "d-api": ["p-api", "igas-console", "db-igas_console"], "d-chat": ["p-chat", "zia-chatbot", "db-igas_console"],
+  const RUTAS = { "d-landing": ["landing"], "d-console": ["consola", "p-api", "zia-console"], "d-api": ["p-api", "zia-console", "db-igas_console"], "d-chat": ["p-chat", "zia-chatbot", "db-igas_console"],
     "d-abp-web": ["abp-sitio"], "d-abp-api": ["p-abp-api", "abp-template", ...Object.keys(inst.postgres || {}).filter((k) => /abp/.test(k)).map((k) => "db-" + k)] };
   for (const [id, dom, dest] of dominios) {
     const c = chq[dom], ce = certDe(dom), u = upc[dom];
@@ -212,10 +212,10 @@ function modelo(d) {
 
   // ---------- WEB
   if (Z) { add("landing", "web", { tit: "Landing", st: "ziacentro.mx · /srv/zia/web", tag: "ESTÁTICO", ico: "web", sub: true, est: peorConocido(estSrv("nginx"), estChk(chq["ziacentro.mx"])), det: [["Contenido", "Sitio estático de ziacentro.mx"]] });
-  add("consola", "web", { tit: "zia.console", st: "console.ziacentro.mx", tag: "ESTÁTICO", ico: "web", sub: true, est: peorConocido(estSrv("nginx"), estChk(chq["console.ziacentro.mx"])), det: [["Contenido", "SPA de la consola (/srv/igas-console/current/web)"]] }); }
+  add("consola", "web", { tit: "zia.console", st: "console.ziacentro.mx", tag: "ESTÁTICO", ico: "web", sub: true, est: peorConocido(estSrv("nginx"), estChk(chq["console.ziacentro.mx"])), det: [["Contenido", "SPA de la consola (/srv/zia-console/current/web)"]] }); }
   else add("abp-sitio", "web", { tit: "sitio abp-template", st: "inangelroque.duckdns.org", tag: "SITIO", ico: "web", sub: true, est: peorConocido(estSrv("nginx"), estChk(chq["inangelroque.duckdns.org"])), det: [["nginx", "sites-enabled/abp-template"], ["Dominios", sitios.map((x) => (x.dominios || []).join(", ")).join(" · ") || "—"]] });
   const proxy = (id, tit, st, svc, chk) => add(id, "web", { tit, st, tag: "PROXY", ico: "web", sub: true, est: peorConocido(estSrv("nginx"), estChk(chq[chk])), det: [["Proxy", st], ["Backend", svc]] });
-  if (Z) { proxy("p-api", "proxy api", "api.ziacentro.mx → :5010", "igas-console", "api.ziacentro.mx"); proxy("p-chat", "proxy /api/chat", "ziacentro.mx/api/chat → :5020", "zia-chatbot", "ziacentro.mx/api/chat"); }
+  if (Z) { proxy("p-api", "proxy api", "api.ziacentro.mx → :5010", "zia-console", "api.ziacentro.mx"); proxy("p-chat", "proxy /api/chat", "ziacentro.mx/api/chat → :5020", "zia-chatbot", "ziacentro.mx/api/chat"); }
   else proxy("p-abp-api", "proxy api", "api.inangelroque… → :5000", "abp-template", "api.inangelroque.duckdns.org");
   add("nginx", "web", { tit: "nginx", st: Z ? ":80 · :443 · solo Cloudflare" : ":443 · host compartido con ZIA", tag: "PROXY", ico: "web", est: peor(estSrv("nginx"), (inst.nginx || {}).configValida === false ? "warn" : "ok"), hijos: Z ? ["landing", "consola", "p-api", "p-chat"] : ["abp-sitio", "p-abp-api"], uptime: msv.nginx?.uptime?.["24h"],
     met: [met("con", `${act.reqMin ?? "—"} req/min`), met("disk", `${act.e5Min ?? 0} 5xx`, act.e5Min ? "warn" : ""), met("mem", bytes((srv.nginx || {}).memoriaBytes))],
@@ -223,14 +223,14 @@ function modelo(d) {
     det: [...svcDet("nginx"), ["nginx -t", (inst.nginx || {}).configValida ? "válida" : "con errores o sin dato"], ["Sitios", sitios.map((s) => s.archivo).join(", ") || "—"]] });
 
   // ---------- API / BACKEND
-  if (Z) servicio("igas-console", "api", "igas-console", "127.0.0.1:5010 · ABP + OpenIddict");
+  if (Z) servicio("zia-console", "api", "zia-console", "127.0.0.1 · ABP + OpenIddict", { tit: "zia-console :5010" });
   if (!Z) servicio("abp-template", "api", "abp-template", "127.0.0.1:5000 · api.inangelroque.duckdns.org");
 
   // ---------- BOTS
   const bot = mon.bot || {};
   if (Z) { servicio("zia-chatbot", "bots", "zia-chatbot", "127.0.0.1:5020 · chat de la landing");
-  add("worker", "bots", { tit: "ChatLeadTelegramWorker", st: "dentro de igas-console", tag: "WORKER", ico: "reloj", sub: false, est: estSrv("igas-console"), inferido: true,
-    det: [["Qué hace", "Avisa por Telegram de los prospectos que deja el chat"], ["Proceso", "igas-console (estado inferido del servicio)"]] });
+  add("worker", "bots", { tit: "ChatLeadTelegramWorker", st: "dentro de zia-console", tag: "WORKER", ico: "reloj", sub: false, est: estSrv("zia-console"), inferido: true,
+    det: [["Qué hace", "Avisa por Telegram de los prospectos que deja el chat"], ["Proceso", "zia-console (estado inferido del servicio)"]] });
   add("bot-monitor", "bots", { tit: "@VpsIngAngelMonitor_bot", st: "alertas VPS · leads", tag: "BOT", ico: "avion", est: bot.t ? (bot.ok ? "ok" : "mal") : "gris",
     met: [met("reloj", bot.t ? `getMe hace ${dur(Date.now() / 1000 - bot.t)}` : "sin dato", bot.t && !bot.ok ? "mal" : "")],
     det: [["Token", bot.t ? (bot.ok ? "válido (getMe OK)" : "getMe falló") : "sin dato"], ["Chat de alertas", bot.chatConfigurado ? "configurado (grupo VPS)" : "no configurado"], ["Usuario", bot.usuario ? "@" + bot.usuario : "—"]] });
@@ -253,7 +253,7 @@ function modelo(d) {
   const hp = mon.historialPuntos || {};
   if (Z) add("historial", "datos", { tit: "Historial", st: "monitoreo-historial.json · 30 d", tag: "SERIE", ico: "disk", est: edad == null ? "mal" : edad < 150 ? "ok" : edad < 600 ? "warn" : "mal",
     met: [met("disk", bytes(mon.historialBytes)), met("con", `${hp.minuto ?? 0} + ${hp.agregado ?? 0} pts`), met("reloj", edad != null ? `hace ${Math.round(edad)} s` : "—")],
-    det: [["Contenido", "Muestras por minuto (24 h), agregados de 10 min (30 d) e incidentes"], ["Tamaño", bytes(mon.historialBytes)], ["Última muestra", edad != null ? `hace ${Math.round(edad)} s` : "nunca"], ["Lo sirve", "igas-console · GET /historial"], ["Alertas", "las envía el colector por @VpsIngAngelMonitor_bot"]] });
+    det: [["Contenido", "Muestras por minuto (24 h), agregados de 10 min (30 d) e incidentes"], ["Tamaño", bytes(mon.historialBytes)], ["Última muestra", edad != null ? `hace ${Math.round(edad)} s` : "nunca"], ["Lo sirve", "zia-console · GET /historial"], ["Alertas", "las envía el colector por @VpsIngAngelMonitor_bot"]] });
 
   // ---------- CRON / TAREAS
   const ahora = Date.now() / 1000;
@@ -263,8 +263,8 @@ function modelo(d) {
     const atrasado = t.proximo && t.proximo < ahora - 300;
     const est = fallo ? "mal" : !t.ultimo ? "gris" : atrasado ? "warn" : "ok";
     add("t-" + t.nombre, "cron", { tit: t.nombre, st: t.descripcion, tag: "TIMER", ico: "reloj", est, compacto: true,
-      met: [met("reloj", t.ultimo ? `últ. ${dur(ahora - t.ultimo)}` : "nunca"), met("con", t.nombre === "igas-monitoreo-vps" ? "cada 1 min" : t.proximo ? `próx. ${dur(t.proximo - ahora)}` : "—"), ...(fallo ? [met("disk", `código ${t.codigo}`, "mal")] : [])],
-      det: [["Qué hace", t.descripcion], ["Última ejecución", t.ultimo ? `${fecha(t.ultimo * 1000)} (hace ${dur(ahora - t.ultimo)})` : "nunca"], ["Próxima", t.proximo ? `${fecha(t.proximo * 1000)} (en ${dur(t.proximo - ahora)})` : t.nombre === "igas-monitoreo-vps" ? "cada minuto" : "—"], ["Resultado", `${t.resultado} · código ${t.codigo}`], ["Duración", t.duracion != null ? `${t.duracion} s` : "—"]] });
+      met: [met("reloj", t.ultimo ? `últ. ${dur(ahora - t.ultimo)}` : "nunca"), met("con", t.nombre === "zia-monitoreo-vps" ? "cada 1 min" : t.proximo ? `próx. ${dur(t.proximo - ahora)}` : "—"), ...(fallo ? [met("disk", `código ${t.codigo}`, "mal")] : [])],
+      det: [["Qué hace", t.descripcion], ["Última ejecución", t.ultimo ? `${fecha(t.ultimo * 1000)} (hace ${dur(ahora - t.ultimo)})` : "nunca"], ["Próxima", t.proximo ? `${fecha(t.proximo * 1000)} (en ${dur(t.proximo - ahora)})` : t.nombre === "zia-monitoreo-vps" ? "cada minuto" : "—"], ["Resultado", `${t.resultado} · código ${t.codigo}`], ["Duración", t.duracion != null ? `${t.duracion} s` : "—"]] });
   }
 
   // ---------- SEGURIDAD
@@ -289,18 +289,18 @@ function modelo(d) {
   const TINTE = { "d-landing": "#a3e635", "d-console": "#38bdf8", "d-api": "#c084fc", "d-chat": "#2dd4bf", "d-abp-web": "#a3e635", "d-abp-api": "#c084fc" };
   const rl = (a, b, t, et) => { l(a, b); Object.assign(E.at(-1), { tinte: t, etiqueta: et }); };
   if (Z) { rl("d-landing", "landing", TINTE["d-landing"]); rl("d-console", "consola", TINTE["d-console"]); rl("d-api", "p-api", TINTE["d-api"]); rl("d-chat", "p-chat", TINTE["d-chat"]);
-    rl("p-api", "igas-console", TINTE["d-api"], ":5010");
+    rl("p-api", "zia-console", TINTE["d-api"], ":5010");
     l("consola", "p-api", "inferido"); Object.assign(E.at(-1), { tinte: TINTE["d-console"], etqVertical: "navegador → api" }); rl("p-chat", "zia-chatbot", TINTE["d-chat"], ":5020"); }
   else { rl("d-abp-web", "abp-sitio", TINTE["d-abp-web"]); rl("d-abp-api", "p-abp-api", TINTE["d-abp-api"]); rl("p-abp-api", "abp-template", TINTE["d-abp-api"], ":5000"); }
-  l("igas-console", "worker"); l("worker", "bot-monitor", "medido", { lado: "derecha" }); l("bot-monitor", "telegram", "medido", { lado: "derecha", carril: 1 });
+  l("zia-console", "worker"); l("worker", "bot-monitor", "medido", { lado: "derecha" }); l("bot-monitor", "telegram", "medido", { lado: "derecha", carril: 1 });
   l("abp-template", "bot-abp", "inferido"); l("bot-abp", "telegram", "inferido", { lado: "derecha" });
-  l("igas-console", "db-igas_console"); l("zia-chatbot", "db-igas_console", "inferido");
+  l("zia-console", "db-igas_console"); l("zia-chatbot", "db-igas_console", "inferido");
   for (const id of dbIds.filter((x) => x.startsWith("db-abp"))) l("abp-template", id);
   const tl = (t, b, tipo = "medido") => N["t-" + t] && l("t-" + t, b, tipo, { dirA: -1 });
-  tl("igas-monitoreo-vps", "historial"); tl("igas-monitoreo-vps", "bot-monitor"); tl("igas-console-backup", "db-igas_console"); 
-  tl("igas-console-restore-check", "postgres", "inferido"); tl("abp-template-restore-check", "postgres", "inferido");
+  tl("zia-monitoreo-vps", "historial"); tl("zia-monitoreo-vps", "bot-monitor"); tl("zia-console-backup", "db-igas_console"); 
+  tl("zia-console-restore-check", "postgres", "inferido"); tl("abp-template-restore-check", "postgres", "inferido");
   for (const id of dbIds.filter((x) => x.startsWith("db-abp"))) tl("abp-template-backup", id);
-  l("historial", "igas-console", "medido");
+  l("historial", "zia-console", "medido");
   if (N["t-cf-actualizar-ips"]) l("t-cf-actualizar-ips", "firewall", "inferido");
   if (N["t-certbot"]) l("t-certbot", "firewall", "inferido");
   l("github", "ssh", "inferido", { bajo: 0 });
@@ -375,7 +375,7 @@ function distribuir() {
   cols.forEach((c) => (c.style.height = alto + "px"));
   COL_ALTO = alto;
   // alinea cada destino con su origen (líneas casi rectas) sin invadir a sus vecinas
-  const ALINEAR = [["nginx", "cloudflare"], ["igas-console", "p-api"], ["zia-chatbot", "p-chat"], ["abp-template", "p-abp-api"]];
+  const ALINEAR = [["nginx", "cloudflare"], ["zia-console", "p-api"], ["zia-chatbot", "p-chat"], ["abp-template", "p-abp-api"]];
   document.querySelectorAll(".capa-col > .nodo").forEach((el) => (el.style.top = ""));
   for (const [dst, src] of ALINEAR) {
     const el = document.querySelector(`.capa-col > [data-id="${dst}"]`), S = caja(src); if (!el || !S) continue;
@@ -579,7 +579,7 @@ function graficasDeNodo(id, H) {
     + grafica("CARGA 1 MIN", ts, [{ n: "carga", v: serie(P, (p) => p.carga), c: "#f59e0b" }], o) + grafica("RED KB/S", ts, [{ n: "↓ rx", v: serie(P, (p) => p.rx / 1024) }, { n: "↑ tx", v: serie(P, (p) => p.tx / 1024), c: "#e879f9" }], o);
   if (n?.chk) return lat(n.chk, "LATENCIA (VÍA CLOUDFLARE)");
   if (id === "nginx" || id === "usuarios") return grafica("PETICIONES / " + (H.resolucionSegundos > 60 ? "10 MIN" : "MIN"), ts, [{ n: "req", v: serie(P, (p) => p.req) }, { n: "5xx", v: serie(P, (p) => p.e5), c: "#ef4444" }], o) + (id === "nginx" ? mem("nginx") : "");
-  if (["igas-console", "zia-chatbot", "abp-template"].includes(id)) return lat("local:" + id, "LATENCIA LOCAL") + mem(id);
+  if (["zia-console", "zia-chatbot", "abp-template"].includes(id)) return lat("local:" + id, "LATENCIA LOCAL") + mem(id);
   if (id === "postgres" || id.startsWith("db-")) return mem("postgresql");
   if (id === "fail2ban" || id === "ssh") return grafica("BANEOS", ts, [{ n: "baneadas", v: serie(P, (p) => p.bans), c: "#f59e0b" }, { n: "nuevas", v: serie(P, (p) => p.nb), c: "#ef4444" }], o);
   if (id === "cloudflare") return grafica("LATENCIA PÚBLICA", ts, Object.keys(P.at(-1)?.chk || {}).filter((k) => !k.startsWith("local:")).map((k) => ({ n: k, v: serie(P, (p) => p.chk[k]?.[1]) })), { ...o, unidad: " ms", fmt: (v) => v.toFixed(0) });
@@ -710,7 +710,7 @@ function pintarPills(M) {
   const enl = M.E.filter((e) => e.tipo !== "planeado"), enlOk = enl.filter((e) => e.est === "ok").length;
   const svcs = M.resumen.servicios, srvOk = M.resumen.srvOk;
   const certs = M.resumen.certs, certOk = certs.filter((c) => c.diasRestantes >= 30).length;
-  const nucleo = Z ? ["vps", "nginx", "igas-console", "zia-chatbot", "postgres", "historial", "cloudflare"] : ["vps", "nginx", "abp-template", "postgres", "cloudflare"];
+  const nucleo = Z ? ["vps", "nginx", "zia-console", "zia-chatbot", "postgres", "historial", "cloudflare"] : ["vps", "nginx", "abp-template", "postgres", "cloudflare"];
   const crit = Object.values(M.N).filter((n) => !n.plan && (!n.sub || nucleo.includes(n.id))).map((n) => (nucleo.includes(n.id) || n.est !== "mal" ? n.est : "warn"));
   const global = crit.includes("mal") ? "mal" : crit.includes("warn") || srvOk < svcs.length ? "warn" : "ok";
   const p = (v, t, e) => `<div class="pill ${e}"><b>${v}</b><small>${t}</small></div>`;
