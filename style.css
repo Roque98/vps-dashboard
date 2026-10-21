@@ -167,3 +167,4 @@ body.sin-datos .der>*:not(#sesion){visibility:hidden}
 .g-enl:has(.tronco) .flujo{stroke-width:3.5}
 .tronco-lbl{font:700 10px "JetBrains Mono",monospace;fill:var(--lima);paint-order:stroke;stroke:var(--bg);stroke-width:4px}
 .tronco-lbl .u{font-size:7.5px;font-weight:500;fill:#9fb39a}
+.enl-lbl{font:700 9px "JetBrains Mono",monospace;fill:#9fb39a;paint-order:stroke;stroke:var(--bg);stroke-width:3px}
