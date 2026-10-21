@@ -156,3 +156,7 @@ body.sin-datos .der>*:not(#sesion){visibility:hidden}
 .col .nodo .n-tag{font-size:0!important;gap:4px}
 .col .n-tit{white-space:normal;overflow-wrap:anywhere;line-height:1.2}
 .col .nodo.compacto+.nodo.compacto{margin-top:-5px}
+.capa-col{justify-content:space-evenly;align-items:center}.capa-col>.nodo{width:100%}
+.proy{display:inline-flex;border:1px solid #2a332d;border-radius:6px;overflow:hidden;margin-left:14px;vertical-align:middle;font-size:10px;letter-spacing:.08em}
+.proy a{padding:4px 9px;color:#8a968e;text-decoration:none}.proy a.activo{background:var(--lima);color:#0a0d0b;font-weight:700}.proy a:hover:not(.activo){color:var(--lima)}
+.fila1>.izq{display:flex;align-items:center}

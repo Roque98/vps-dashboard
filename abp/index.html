@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>ABP TEMPLATE · PILOTO</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="top">
+  <div class="fila1">
+    <div class="izq"><div class="titulo">ZIA <b>MONITOREO</b></div><nav class="proy"><a data-p="zia" href="/vps-dashboard/">ZIA</a><a data-p="abp" href="/vps-dashboard/abp/">ABP PILOTO</a></nav></div>
+    <div class="der">
+      <span class="tenue oc-movil">ACTUALIZADO:</span> <span id="actualizado">—</span>
+      <span class="live" id="live"><i></i>LIVE</span>
+      <span id="sesion"></span>
+    </div>
+  </div>
+  <div class="fila2">
+    <nav class="tabs" id="tabs">
+      <button data-tab="arquitectura" class="activo">ARQUITECTURA</button>
+      <button data-tab="servicios">SERVICIOS</button>
+      <button data-tab="seguridad">SEGURIDAD</button>
+      <button data-tab="nodos">NODOS</button>
+      <button data-tab="metricas">MÉTRICAS</button>
+      <button data-tab="incidentes">INCIDENTES</button>
+    </nav>
+    <div class="pills" id="pills"></div>
+  </div>
+</header>
+
+<main>
+  <section id="v-login" class="login oculto">
+    <div class="login-card">
+      <div class="titulo grande">ZIA <b>MONITOREO</b></div>
+      <div class="login-sub">PANEL DEL SERVIDOR · ACCESO RESTRINGIDO</div>
+      <div class="login-diag"><span>USUARIO</span><i></i><span>OIDC</span><i></i><span>API</span><i></i><span>VPS</span></div>
+      <p>Inicia sesión con tu cuenta de ZIA-Console. Se requiere el permiso <code>Monitoreo.VerVps</code>.</p>
+      <button id="btn-login" class="btn-lima">INICIAR SESIÓN →</button>
+      <div class="login-pie">api.ziacentro.mx · código de autorización + PKCE</div>
+    </div>
+  </section>
+
+  <section id="v-error" class="login oculto">
+    <div class="login-card error-card">
+      <div class="err-tag" id="err-tag">ERROR</div>
+      <div class="titulo grande" id="err-titulo"></div>
+      <p id="err-texto"></p>
+      <div class="fila-btn"><button id="btn-reintentar" class="btn-lima">REINTENTAR</button><button id="btn-salir" class="btn-linea">CAMBIAR DE USUARIO</button></div>
+    </div>
+  </section>
+
+  <section id="v-arquitectura" class="vista oculto">
+    <div class="viewport" id="viewport">
+      <div class="lienzo" id="lienzo">
+        <svg class="enlaces" id="enlaces"></svg>
+        <div id="nodos-diagrama"></div>
+      </div>
+      <div class="zoom"><button id="z-mas" title="Acercar">+</button><button id="z-menos" title="Alejar">−</button><button id="z-fit" title="Ajustar">⤢</button></div>
+      <div class="nota" id="nota"></div>
+    </div>
+  </section>
+  <section id="v-servicios" class="vista lista oculto"></section>
+  <section id="v-seguridad" class="vista lista oculto"></section>
+  <section id="v-nodos" class="vista lista oculto"></section>
+  <section id="v-metricas" class="vista lista oculto"></section>
+  <section id="v-incidentes" class="vista lista oculto"></section>
+
+  <aside class="panel" id="panel"><button class="cerrar" id="panel-cerrar">✕</button><div id="panel-cuerpo"></div></aside>
+</main>
+
+<footer class="leyenda" id="leyenda">
+  <span><i class="lg-card"></i>SERVIDOR</span><span><i class="lg-card sub"></i>SERVICIO / DOMINIO</span><span><i class="lg-card plan"></i>PLANEADO</span>
+  <span><i class="dot ok"></i>OK</span><span><i class="dot warn"></i>DEGRADADO</span><span><i class="dot mal"></i>FALLA</span><span><i class="dot gris"></i>SIN DATO</span>
+  <span><i class="lg-line"></i>MEDIDO</span><span><i class="lg-line dash"></i>INFERIDO</span><span><i class="lg-line dot3"></i>PLANEADO</span>
+  <span class="ico-l" data-i="cpu">CPU</span><span class="ico-l" data-i="mem">MEMORIA</span><span class="ico-l" data-i="disk">DISCO</span><span class="ico-l" data-i="con">CONEXIONES / BANEOS</span>
+  <span class="hint">Clic en un nodo para aislar sus conexiones · arrastra / rueda para mover y hacer zoom</span>
+</footer>
+<script src="../config.js"></script>
+<script>window.PROYECTO = "abp";</script>
+<script type="module" src="../app.js"></script>
+</body>
+</html>
