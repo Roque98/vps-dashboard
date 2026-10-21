@@ -192,9 +192,10 @@ function modelo(d) {
     met: [met("reloj", ultDep ? "deploy hace " + hace(ultDep) : "sin deploy")], det: Object.entries(deps).map(([k, v]) => [`Último deploy ${k}`, `${fecha(v)} (hace ${hace(v)})`]) });
 
   // ---------- EDGE
-  const dominios = Z ? [["d-landing", "ziacentro.mx", "landing estática"], ["d-console", "console.ziacentro.mx", "consola Angular"], ["d-api", "api.ziacentro.mx", "igas-console :5010"], ["d-chat", "ziacentro.mx/api/chat", "zia-chatbot :5020"]]
+  const dominios = Z ? [["d-landing", "ziacentro.mx", "landing estática"], ["d-console", "console.ziacentro.mx", "zia.console"], ["d-api", "api.ziacentro.mx", "igas-console :5010"], ["d-chat", "ziacentro.mx/api/chat", "zia-chatbot :5020"]]
     : [["d-abp-web", "inangelroque.duckdns.org", "sitio abp-template"], ["d-abp-api", "api.inangelroque.duckdns.org", "abp-template :5000"]];
-  const RUTAS = { "d-landing": ["landing"], "d-console": ["consola"], "d-api": ["p-api", "igas-console", "db-igas_console"], "d-chat": ["p-chat", "zia-chatbot", "db-igas_console"],
+  const NOMBRES = { landing: "Landing", consola: "zia.console", "p-api": "proxy api", "p-chat": "proxy /api/chat", "p-abp-api": "proxy api", "abp-sitio": "sitio abp-template" };
+  const RUTAS = { "d-landing": ["landing"], "d-console": ["consola", "p-api", "igas-console"], "d-api": ["p-api", "igas-console", "db-igas_console"], "d-chat": ["p-chat", "zia-chatbot", "db-igas_console"],
     "d-abp-web": ["abp-sitio"], "d-abp-api": ["p-abp-api", "abp-template", ...Object.keys(inst.postgres || {}).filter((k) => /abp/.test(k)).map((k) => "db-" + k)] };
   for (const [id, dom, dest] of dominios) {
     const c = chq[dom], ce = certDe(dom), u = upc[dom];
@@ -202,7 +203,7 @@ function modelo(d) {
     add(id, "edge", { tit: dom, st: "→ " + dest, ruta: ["cloudflare", "nginx", ...RUTAS[id]], tag: "DOMINIO", ico: "web", sub: true, chk: dom, est: peorConocido(estChk(c), estCert), uptime: u?.["24h"],
       met: [met("con", `HTTP ${c?.codigo || "—"}`, c && !c.ok ? "mal" : ""), met("reloj", c ? `${c.ms} ms` : "—", c?.ms > 1500 ? "warn" : ""), met("candado", ce ? `${Math.floor(ce.diasRestantes)} d` : "—", ce ? estCert : "")],
       sparks: [{ lbl: "LAT", v: (sp.lat || {})[dom], fmt: (x) => `${x} ms` }],
-      det: [["Chequeo (vía Cloudflare)", c ? `${c.url} → HTTP ${c.codigo || "sin respuesta"} en ${c.ms} ms` : "sin dato"], ["Uptime 24h / 7d / 30d", u ? `${pct(u["24h"])} · ${pct(u["7d"])} · ${pct(u["30d"])}` : "—"], ["Certificado", ce ? `${ce.nombre} · vence ${fecha(ce.venceUtc)} (${Math.floor(ce.diasRestantes)} d)` : "—"], ["Destino", dest], ["Ruta", [dom, Z ? "Cloudflare" : "DuckDNS", "nginx", ...RUTAS[id]].join(" → ")]] });
+      det: [["Chequeo (vía Cloudflare)", c ? `${c.url} → HTTP ${c.codigo || "sin respuesta"} en ${c.ms} ms` : "sin dato"], ["Uptime 24h / 7d / 30d", u ? `${pct(u["24h"])} · ${pct(u["7d"])} · ${pct(u["30d"])}` : "—"], ["Certificado", ce ? `${ce.nombre} · vence ${fecha(ce.venceUtc)} (${Math.floor(ce.diasRestantes)} d)` : "—"], ["Destino", dest], ["Ruta", [dom, Z ? "Cloudflare" : "DuckDNS", "nginx", ...RUTAS[id].map((x) => NOMBRES[x] || x.replace(/^db-/, ""))].join(" → ")]] });
   }
   const dPri = dominios[0][1];
   add("cloudflare", "edge", { tit: Z ? "Cloudflare" : "DuckDNS", st: Z ? "proxy · DNS · TLS de borde" : "DNS dinámico · TLS Let's Encrypt", tag: "EDGE", ico: "nube", est: Z ? "ok" : peorConocido(...dominios.map((x) => estChk(chq[x[1]]))), hijos: dominios.map((x) => x[0]),
@@ -211,7 +212,7 @@ function modelo(d) {
 
   // ---------- WEB
   if (Z) { add("landing", "web", { tit: "Landing", st: "ziacentro.mx · /srv/zia/web", tag: "ESTÁTICO", ico: "web", sub: true, est: peorConocido(estSrv("nginx"), estChk(chq["ziacentro.mx"])), det: [["Contenido", "Sitio estático de ziacentro.mx"]] });
-  add("consola", "web", { tit: "Consola Angular", st: "console.ziacentro.mx", tag: "ESTÁTICO", ico: "web", sub: true, est: peorConocido(estSrv("nginx"), estChk(chq["console.ziacentro.mx"])), det: [["Contenido", "SPA de la consola (/srv/igas-console/current/web)"]] }); }
+  add("consola", "web", { tit: "zia.console", st: "console.ziacentro.mx", tag: "ESTÁTICO", ico: "web", sub: true, est: peorConocido(estSrv("nginx"), estChk(chq["console.ziacentro.mx"])), det: [["Contenido", "SPA de la consola (/srv/igas-console/current/web)"]] }); }
   else add("abp-sitio", "web", { tit: "sitio abp-template", st: "inangelroque.duckdns.org", tag: "SITIO", ico: "web", sub: true, est: peorConocido(estSrv("nginx"), estChk(chq["inangelroque.duckdns.org"])), det: [["nginx", "sites-enabled/abp-template"], ["Dominios", sitios.map((x) => (x.dominios || []).join(", ")).join(" · ") || "—"]] });
   const proxy = (id, tit, st, svc, chk) => add(id, "web", { tit, st, tag: "PROXY", ico: "web", sub: true, est: peorConocido(estSrv("nginx"), estChk(chq[chk])), det: [["Proxy", st], ["Backend", svc]] });
   if (Z) { proxy("p-api", "proxy api", "api.ziacentro.mx → :5010", "igas-console", "api.ziacentro.mx"); proxy("p-chat", "proxy /api/chat", "ziacentro.mx/api/chat → :5020", "zia-chatbot", "ziacentro.mx/api/chat"); }
@@ -288,7 +289,8 @@ function modelo(d) {
   const TINTE = { "d-landing": "#a3e635", "d-console": "#38bdf8", "d-api": "#c084fc", "d-chat": "#2dd4bf", "d-abp-web": "#a3e635", "d-abp-api": "#c084fc" };
   const rl = (a, b, t, et) => { l(a, b); Object.assign(E.at(-1), { tinte: t, etiqueta: et }); };
   if (Z) { rl("d-landing", "landing", TINTE["d-landing"]); rl("d-console", "consola", TINTE["d-console"]); rl("d-api", "p-api", TINTE["d-api"]); rl("d-chat", "p-chat", TINTE["d-chat"]);
-    rl("p-api", "igas-console", TINTE["d-api"], ":5010"); rl("p-chat", "zia-chatbot", TINTE["d-chat"], ":5020"); }
+    rl("p-api", "igas-console", TINTE["d-api"], ":5010");
+    l("consola", "p-api", "inferido"); Object.assign(E.at(-1), { tinte: TINTE["d-console"], etqVertical: "navegador → api" }); rl("p-chat", "zia-chatbot", TINTE["d-chat"], ":5020"); }
   else { rl("d-abp-web", "abp-sitio", TINTE["d-abp-web"]); rl("d-abp-api", "p-abp-api", TINTE["d-abp-api"]); rl("p-abp-api", "abp-template", TINTE["d-abp-api"], ":5000"); }
   l("igas-console", "worker"); l("worker", "bot-monitor", "medido", { lado: "derecha" }); l("bot-monitor", "telegram", "medido", { lado: "derecha", carril: 1 });
   l("abp-template", "bot-abp", "inferido"); l("bot-abp", "telegram", "inferido", { lado: "derecha" });
@@ -510,6 +512,7 @@ function trazarEnlaces(M) {
     const d = ruta(pts), activo = e.tipo !== "planeado" && e.est !== "gris";
     html += `<g class="g-enl" data-a="${e.a}" data-b="${e.b}">
       <path class="enl ${e.est} ${e.tipo} ${activo && e.tipo === "medido" ? "base" : ""} ${e.via?.tronco ? "tronco" : ""} ${e.via?.bus ? "stub" : ""}" d="${d}" ${tin ? `style="stroke:${tin}"` : ""} ${e.sinPunta ? "" : `${e.inverso ? "marker-start" : "marker-end"}="url(#fl-${tin ? "t" + tin.slice(1) : e.est})"`}/>
+      ${e.etqVertical ? (() => { const v = pts.findIndex((p, i) => i && Math.abs(p[0] - pts[i - 1][0]) < 0.5), x = pts[v][0] + 4, y = (pts[v][1] + pts[v - 1][1]) / 2; return `<text class="enl-lbl" text-anchor="middle" transform="translate(${x + 5},${y}) rotate(90)" ${tin ? `style="fill:${tin}"` : ""}>${e.etqVertical}</text>`; })() : ""}
       ${e.etiqueta ? `<text class="enl-lbl" text-anchor="end" x="${pts.at(-1)[0] - 9}" y="${pts.at(-1)[1] - 5}" ${tin ? `style="fill:${tin}"` : ""}>${e.etiqueta}</text>` : ""}
       ${e.via?.tronco ? `<text class="tronco-lbl" text-anchor="middle" x="${(pts[0][0] + pts.at(-1)[0]) / 2 + 4}" y="${pts.at(-1)[1] - 16}">${M.mon.actividad?.reqMin ?? "—"}<tspan class="u" x="${(pts[0][0] + pts.at(-1)[0]) / 2 + 4}" dy="9">req/min</tspan></text>` : ""}
       ${activo ? `<path class="flujo ${e.est}" d="${d}" style="${tin ? `stroke:${tin};color:${tin};` : ""}animation-duration:${(e.dur * LENTO).toFixed(2)}s;opacity:${e.brillo};${e.inverso ? "animation-direction:reverse" : ""}"/>` : ""}
