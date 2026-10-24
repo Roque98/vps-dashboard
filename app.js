@@ -192,10 +192,13 @@ function modelo(d) {
     met: [met("reloj", ultDep ? "deploy hace " + hace(ultDep) : "sin deploy")], det: Object.entries(deps).map(([k, v]) => [`Último deploy ${k}`, `${fecha(v)} (hace ${hace(v)})`]) });
 
   // ---------- EDGE
-  const dominios = Z ? [["d-landing", "ziacentro.mx", "landing estática"], ["d-console", "console.ziacentro.mx", "zia.console"], ["d-api", "api.ziacentro.mx", "zia-console :5010"], ["d-chat", "ziacentro.mx/api/chat", "zia-chatbot :5020"]]
+  const dominios = Z ? [["d-landing", "ziacentro.mx", "landing estática"], ["d-console", "console.ziacentro.mx", "zia.console"], ["d-api", "api.ziacentro.mx", "zia-console :5010"], ["d-chat", "ziacentro.mx/api/chat", "zia-chatbot :5020"],
+    ["d-mesh", "mesh.ziacentro.mx", "ZIA Remote :4430"], ["d-obs", "obs.ziacentro.mx", "OpenObserve :5080"]]
     : [["d-abp-web", "inangelroque.duckdns.org", "sitio abp-template"], ["d-abp-api", "api.inangelroque.duckdns.org", "abp-template :5000"]];
-  const NOMBRES = { landing: "Landing", consola: "zia.console", "p-api": "proxy api", "p-chat": "proxy /api/chat", "p-abp-api": "proxy api", "abp-sitio": "sitio abp-template" };
+  const NOMBRES = { landing: "Landing", consola: "zia.console", "p-api": "proxy api", "p-chat": "proxy /api/chat", "p-abp-api": "proxy api", "abp-sitio": "sitio abp-template",
+    "p-mesh": "proxy mesh", meshcentral: "ZIA Remote", "p-obs": "proxy obs", openobserve: "OpenObserve" };
   const RUTAS = { "d-landing": ["landing"], "d-console": ["consola", "p-api", "zia-console"], "d-api": ["p-api", "zia-console", "db-igas_console"], "d-chat": ["p-chat", "zia-chatbot", "db-igas_console"],
+    "d-mesh": ["p-mesh", "meshcentral"], "d-obs": ["p-obs", "openobserve"],
     "d-abp-web": ["abp-sitio"], "d-abp-api": ["p-abp-api", "abp-template", ...Object.keys(inst.postgres || {}).filter((k) => /abp/.test(k)).map((k) => "db-" + k)] };
   for (const [id, dom, dest] of dominios) {
     const c = chq[dom], ce = certDe(dom), u = upc[dom];
@@ -215,15 +218,61 @@ function modelo(d) {
   add("consola", "web", { tit: "zia.console", st: "console.ziacentro.mx", tag: "ESTÁTICO", ico: "web", sub: true, est: peorConocido(estSrv("nginx"), estChk(chq["console.ziacentro.mx"])), det: [["Contenido", "SPA de la consola (/srv/zia-console/current/web)"]] }); }
   else add("abp-sitio", "web", { tit: "sitio abp-template", st: "inangelroque.duckdns.org", tag: "SITIO", ico: "web", sub: true, est: peorConocido(estSrv("nginx"), estChk(chq["inangelroque.duckdns.org"])), det: [["nginx", "sites-enabled/abp-template"], ["Dominios", sitios.map((x) => (x.dominios || []).join(", ")).join(" · ") || "—"]] });
   const proxy = (id, tit, st, svc, chk) => add(id, "web", { tit, st, tag: "PROXY", ico: "web", sub: true, est: peorConocido(estSrv("nginx"), estChk(chq[chk])), det: [["Proxy", st], ["Backend", svc]] });
-  if (Z) { proxy("p-api", "proxy api", "api.ziacentro.mx → :5010", "zia-console", "api.ziacentro.mx"); proxy("p-chat", "proxy /api/chat", "ziacentro.mx/api/chat → :5020", "zia-chatbot", "ziacentro.mx/api/chat"); }
+  if (Z) { proxy("p-api", "proxy api", "api.ziacentro.mx → :5010", "zia-console", "api.ziacentro.mx"); proxy("p-chat", "proxy /api/chat", "ziacentro.mx/api/chat → :5020", "zia-chatbot", "ziacentro.mx/api/chat");
+    proxy("p-mesh", "proxy mesh", "mesh.ziacentro.mx → :4430", "meshcentral (Docker)", "mesh.ziacentro.mx"); proxy("p-obs", "proxy obs", "obs.ziacentro.mx → :5080", "openobserve (Docker)", "obs.ziacentro.mx"); }
   else proxy("p-abp-api", "proxy api", "api.inangelroque… → :5000", "abp-template", "api.inangelroque.duckdns.org");
-  add("nginx", "web", { tit: "nginx", st: Z ? ":80 · :443 · solo Cloudflare" : ":443 · host compartido con ZIA", tag: "PROXY", ico: "web", est: peor(estSrv("nginx"), (inst.nginx || {}).configValida === false ? "warn" : "ok"), hijos: Z ? ["landing", "consola", "p-api", "p-chat"] : ["abp-sitio", "p-abp-api"], uptime: msv.nginx?.uptime?.["24h"],
+  add("nginx", "web", { tit: "nginx", st: Z ? ":80 · :443 · solo Cloudflare" : ":443 · host compartido con ZIA", tag: "PROXY", ico: "web", est: peor(estSrv("nginx"), (inst.nginx || {}).configValida === false ? "warn" : "ok"), hijos: Z ? ["landing", "consola", "p-api", "p-chat", "p-mesh", "p-obs"] : ["abp-sitio", "p-abp-api"], uptime: msv.nginx?.uptime?.["24h"],
     met: [met("con", `${act.reqMin ?? "—"} req/min`), met("disk", `${act.e5Min ?? 0} 5xx`, act.e5Min ? "warn" : ""), met("mem", bytes((srv.nginx || {}).memoriaBytes))],
     sparks: [{ lbl: "REQ", v: sp.req, fmt: (x) => `${x}/min` }],
     det: [...svcDet("nginx"), ["nginx -t", (inst.nginx || {}).configValida ? "válida" : "con errores o sin dato"], ["Sitios", sitios.map((s) => s.archivo).join(", ") || "—"]] });
 
   // ---------- API / BACKEND
   if (Z) servicio("zia-console", "api", "zia-console", "127.0.0.1 · ABP + OpenIddict", { tit: "zia-console :5010" });
+
+  // Observabilidad (OpenObserve, docs/observabilidad.md en ZIA-Console): lo resume el recolector.
+  const oo = inst.openobserve || {}, a1 = oo.api1h;
+  if (Z && N["zia-console"] && a1) {
+    const tasa = a1.peticiones ? (100 * a1.errores) / a1.peticiones : 0;
+    const estApi = peor(umbral(a1.p95ms, 1000, 3000), umbral(tasa, 1, 5));
+    N["zia-console"].est = peor(N["zia-console"].est, estApi);
+    N["zia-console"].met.push(met("reloj", `p95 ${Math.round(a1.p95ms)} ms`, umbral(a1.p95ms, 1000, 3000)), met("disk", `${a1.errores} err/h`, a1.errores ? "warn" : ""));
+    N["zia-console"].det.push(["Última hora (OpenObserve)", `${a1.peticiones} peticiones · p50 ${a1.p50ms} ms · p95 ${a1.p95ms} ms · ${a1.errores} con error (${tasa.toFixed(1)} %)`],
+      ...(oo.rutasLentas || []).map((r, i) => [i ? "" : "Rutas más lentas (p95)", `${r.ruta} · ${r.p95ms} ms · ${r.peticiones} pet.`]),
+      ["Trazas y logs", "obs.ziacentro.mx"]);
+  }
+
+  // Contenedores Docker (el recolector lee docker ps/inspect/stats).
+  const dock = Object.fromEntries((inst.docker || []).map((c) => [c.nombre, c]));
+  const contenedor = (id, capa, nombre, tit, st, extra = {}) => {
+    const c = dock[nombre], k = chq["local:" + nombre];
+    const est = !c ? "gris" : c.estado !== "running" ? "mal" : peorConocido(k ? estChk(k) : "ok", c.reinicios > 3 ? "warn" : "ok");
+    add(id, capa, { tit, st, tag: "DOCKER", ico: "servidor", est,
+      met: [...(k ? [met("reloj", `${k.ms} ms`, k.ms > 1500 ? "warn" : "")] : []), met("mem", c?.memoria || "—"), met("con", `${c?.reinicios ?? "—"} reinic.`, c?.reinicios > 3 ? "warn" : "")],
+      sparks: k ? [{ lbl: "LAT", v: (sp.lat || {})["local:" + nombre], fmt: (x) => `${x} ms` }] : [],
+      det: [["Contenedor", c ? `${c.estado}${c.salud ? " · " + c.salud : ""}` : "no existe"], ["Imagen", c?.imagen || "—"], ["Activo desde", c?.desdeUtc ? `${fecha(c.desdeUtc)} (hace ${hace(c.desdeUtc)})` : "—"], ["Memoria", c?.memoria || "—"], ["Reinicios", c?.reinicios ?? "—"],
+        ...(k ? [["Chequeo local", `${k.url.replace(/^http:\/\/127\.0\.0\.1/, "")} → HTTP ${k.codigo} en ${k.ms} ms`]] : [])], ...extra });
+  };
+  if (Z) {
+    const mc = inst.meshcentral || {};
+    contenedor("meshcentral", "api", "meshcentral", "ZIA Remote", "MeshCentral · Docker :4430");
+    if (mc.node) { N.meshcentral.met.push(met("candado", `Node ${mc.node}`, mc.nodeConParche === false ? "warn" : ""));
+      N.meshcentral.det.push(["Node.js", `${mc.node}${mc.nodeConParche === false ? " — SIN el parche de seguridad del 21-oct-2026 (≥ 24.22.1); actualizar la imagen cuando salga" : " · con parches"}`]);
+      if (mc.nodeConParche === false) N.meshcentral.est = peor(N.meshcentral.est, "warn"); }
+    contenedor("openobserve", "datos", "openobserve", "OpenObserve", "logs · trazas · métricas · Docker :5080");
+    N.openobserve.det.push(["Recibe", "OpenTelemetry de zia-console y los errores de la web y la app"], ["Consulta del panel", oo.conCredencial ? (oo.error ? `falló (${oo.error})` : "OK") : "sin credencial del recolector"]);
+    const ec = oo.erroresCliente24h;
+    add("errores-cliente", "externos", { tit: "Errores web / app", st: "JavaScript de la consola y la app · 24 h", tag: "OBSERVABILIDAD", ico: "usuarios",
+      est: !ec ? "gris" : ec.total > 20 ? "mal" : ec.total ? "warn" : "ok",
+      met: [met("disk", ec ? `${ec.total} en 24 h` : "—", ec?.total ? "warn" : ""), met("reloj", ec?.ultimoUtc ? "últ. " + hace(ec.ultimoUtc) : "ninguno")],
+      det: [["Qué es", "Errores de JavaScript que vieron los usuarios (los manda la web/app a la API)"], ["Últimas 24 h", ec ? String(ec.total) : "sin dato"], ["Último", ec?.ultimoUtc ? `${fecha(ec.ultimoUtc)} (hace ${hace(ec.ultimoUtc)})` : "—"], ["Detalle", "obs.ziacentro.mx → Logs: «Error en el cliente»"]] });
+    const cp = inst.copias;
+    if (cp) { const edadCp = cp.ultimaUtc ? (Date.now() - new Date(cp.ultimaUtc)) / 3.6e6 : null;
+      add("copias", "datos", { tit: "Copias de seguridad", st: "pg_dump diario · restic fuera del VPS", tag: "RESPALDO", ico: "disk",
+        est: !cp.ok || cp.remoto !== "ok" ? "mal" : edadCp > 30 ? "warn" : "ok",
+        met: [met("reloj", cp.ultimaUtc ? "últ. " + hace(cp.ultimaUtc) : "nunca", edadCp > 30 ? "warn" : ""), met("con", `${cp.copiasFuera ?? "—"} fuera`, cp.remoto !== "ok" ? "mal" : ""), met("disk", bytes(cp.tamanoBytes))],
+        det: [["Última copia", cp.ultimaUtc ? `${fecha(cp.ultimaUtc)} (hace ${hace(cp.ultimaUtc)}) · ${cp.ok ? "OK" : "FALLÓ en " + cp.etapa}` : "nunca"], ["Fuera del servidor", `${cp.remoto} · ${cp.copiasFuera ?? "—"} copias`], ["Tamaño del volcado", bytes(cp.tamanoBytes)],
+          ["Prueba de restauración", cp.verificacionUtc ? `${fecha(cp.verificacionUtc)} · ${cp.verificacionOk ? "OK" : "FALLÓ"}` : "nunca"]] }); }
+  }
   if (!Z) servicio("abp-template", "api", "abp-template", "127.0.0.1:5000 · api.inangelroque.duckdns.org");
 
   // ---------- BOTS
@@ -286,18 +335,22 @@ function modelo(d) {
   const E = [];
   const l = (a, b, tipo = "medido", via) => E.push({ a, b, tipo, via });
   l("usuarios", "cloudflare", "inferido"); if (Z) l("gasolineras", "cloudflare", "inferido");
-  const TINTE = { "d-landing": "#a3e635", "d-console": "#38bdf8", "d-api": "#c084fc", "d-chat": "#2dd4bf", "d-abp-web": "#a3e635", "d-abp-api": "#c084fc" };
+  const TINTE = { "d-landing": "#a3e635", "d-console": "#38bdf8", "d-api": "#c084fc", "d-chat": "#2dd4bf", "d-mesh": "#fb923c", "d-obs": "#facc15", "d-abp-web": "#a3e635", "d-abp-api": "#c084fc" };
   const rl = (a, b, t, et) => { l(a, b); Object.assign(E.at(-1), { tinte: t, etiqueta: et }); };
   if (Z) { rl("d-landing", "landing", TINTE["d-landing"]); rl("d-console", "consola", TINTE["d-console"]); rl("d-api", "p-api", TINTE["d-api"]); rl("d-chat", "p-chat", TINTE["d-chat"]);
     rl("p-api", "zia-console", TINTE["d-api"], ":5010");
-    l("consola", "p-api", "inferido"); Object.assign(E.at(-1), { tinte: TINTE["d-console"], etqVertical: "navegador → api" }); rl("p-chat", "zia-chatbot", TINTE["d-chat"], ":5020"); }
+    l("consola", "p-api", "inferido"); Object.assign(E.at(-1), { tinte: TINTE["d-console"], etqVertical: "navegador → api" }); rl("p-chat", "zia-chatbot", TINTE["d-chat"], ":5020");
+    rl("d-mesh", "p-mesh", TINTE["d-mesh"]); rl("p-mesh", "meshcentral", TINTE["d-mesh"], ":4430"); rl("d-obs", "p-obs", TINTE["d-obs"]); rl("p-obs", "openobserve", TINTE["d-obs"], ":5080");
+    l("zia-console", "meshcentral"); Object.assign(E.at(-1), { etiqueta: "control.ashx" });
+    l("zia-console", "openobserve"); Object.assign(E.at(-1), { etiqueta: "OTLP" });
+    l("errores-cliente", "zia-console", "inferido"); }
   else { rl("d-abp-web", "abp-sitio", TINTE["d-abp-web"]); rl("d-abp-api", "p-abp-api", TINTE["d-abp-api"]); rl("p-abp-api", "abp-template", TINTE["d-abp-api"], ":5000"); }
   l("zia-console", "worker"); l("worker", "bot-monitor", "medido", { lado: "derecha" }); l("bot-monitor", "telegram", "medido", { lado: "derecha", carril: 1 });
   l("abp-template", "bot-abp", "inferido"); l("bot-abp", "telegram", "inferido", { lado: "derecha" });
   l("zia-console", "db-igas_console"); l("zia-chatbot", "db-igas_console", "inferido");
   for (const id of dbIds.filter((x) => x.startsWith("db-abp"))) l("abp-template", id);
   const tl = (t, b, tipo = "medido") => N["t-" + t] && l("t-" + t, b, tipo, { dirA: -1 });
-  tl("zia-monitoreo-vps", "historial"); tl("zia-monitoreo-vps", "bot-monitor"); tl("zia-console-backup", "db-igas_console"); 
+  tl("zia-monitoreo-vps", "historial"); tl("zia-monitoreo-vps", "bot-monitor"); tl("zia-console-backup", "db-igas_console"); tl("zia-console-backup", "copias"); 
   tl("zia-console-restore-check", "postgres", "inferido"); tl("abp-template-restore-check", "postgres", "inferido");
   for (const id of dbIds.filter((x) => x.startsWith("db-abp"))) tl("abp-template-backup", id);
   l("historial", "zia-console", "medido");
