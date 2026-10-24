@@ -668,7 +668,10 @@ function aplicar() { $("lienzo").style.transform = `translate(${vista.x}px,${vis
 function ajustar() {
   const v = $("viewport"), vw = v.clientWidth, vh = v.clientHeight;
   const fit = Math.min(vw / W, vh / H);
-  if (vw < 820) { vista.s = Math.max(fit, Math.min(0.5, vh / H)); vista.x = 8; vista.y = 4; }
+  // Teléfono (vertical u horizontal) o ventana baja: encuadrar TODO lo dejaba ilegible (en horizontal
+  // la altura manda y la escala caía a ~0.15). Se usa el lado que da MÁS escala (el alto en vertical,
+  // el ancho en horizontal), con tope legible, y el resto se recorre arrastrando.
+  if (vw < 820 || vh < 560) { vista.s = Math.max(fit, Math.min(0.55, Math.max(vw / W, vh / H))); vista.x = Math.max(8, (vw - W * vista.s) / 2); vista.y = 4; }
   else { vista.s = Math.min(fit, 1.15); vista.x = (vw - W * vista.s) / 2; vista.y = Math.max(0, (vh - H * vista.s) / 2); }
   vista.ajustada = true; aplicar();
 }

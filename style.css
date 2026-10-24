@@ -102,6 +102,18 @@ main{flex:1;position:relative;min-height:0}
 .fila-btn{display:flex;gap:10px}
 .login-pie{color:var(--tenue);font-size:10px;margin-top:16px;text-align:center}
 .err-tag{display:inline-block;font-size:9.5px;letter-spacing:.14em;border:1px solid var(--warn);color:var(--warn);border-radius:3px;padding:2px 7px;margin-bottom:10px}
+/* Chrome en Android agranda solo el texto pequeño de una página ancha («font boosting»): la leyenda
+   y la nota salían enormes encima del diagrama. */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+/* Pantalla baja (teléfono en horizontal): la cabecera en 3 filas se comía la altura y al diagrama le
+   quedaba una franja. Todo más compacto y pestañas + indicadores en una sola fila. */
+@media (max-height:560px){
+  .leyenda{gap:10px;padding:3px 12px;max-height:34px;overflow:auto;font-size:9px}.leyenda .hint{display:none}
+  .fila1{padding:4px 12px 2px}.titulo{font-size:14px}.der{font-size:10px}
+  .fila2{padding:2px 12px 4px;flex-wrap:nowrap;gap:8px}.tabs{flex:1 1 auto;min-width:0}.tabs button{padding:4px 9px;font-size:10px}
+  .pills{flex:none}.pill{padding:2px 8px;min-width:0}.pill b{font-size:11px}.pill small{font-size:7.5px}
+  .nota{font-size:9px;bottom:4px}
+}
 @media (max-width:820px){
   .titulo{white-space:nowrap}.der{gap:7px;font-size:10px}#sesion .tenue{display:none}#actualizado{font-size:10px}
   .fila1{padding:8px 12px 4px}.fila2{padding:4px 12px 8px}.oc-movil{display:none}.titulo{font-size:15px}
